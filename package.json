@@ -12,8 +12,7 @@
     "sim": "node tools/simtest.mjs",
     "shots": "node tools/shots.mjs",
     "press": "node tools/beauty.mjs",
-    "assets": "python3 tools/gen-icons.py && python3 packages/android/scripts/gen-android-assets.py",
-    "prebuild": "python3 tools/gen-icons.py"
+    "assets": "python3 tools/gen-icons.py && python3 packages/android/scripts/gen-android-assets.py"
   },
   "license": "Apache-2.0",
   "author": "Mohammad Mahdi Mortazavi",
