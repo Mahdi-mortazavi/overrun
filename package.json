@@ -15,9 +15,6 @@
     "assets": "python3 tools/gen-icons.py && python3 packages/android/scripts/gen-android-assets.py",
     "prebuild": "python3 tools/gen-icons.py"
   },
-  "devDependencies": {
-    "playwright": "^1.49.0"
-  },
   "license": "Apache-2.0",
   "author": "Mohammad Mahdi Mortazavi",
   "repository": {

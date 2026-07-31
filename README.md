@@ -38,6 +38,12 @@ cd packages/server && npm install && npx wrangler dev
 
 ```bash
 node tools/simtest.mjs      # runs every mode headless, prints balance telemetry
+
+# The screenshot tools need a browser. Playwright is deliberately NOT a
+# dependency of this repo: its postinstall downloads ~150 MB of Chromium, which
+# turned a 20-second Cloudflare build into a three-minute one for a package
+# that no production build ever uses.
+npm i --no-save playwright && npx playwright install chromium
 node tools/shots.mjs        # drives the built game in headless Chromium
 node tools/beauty.mjs       # staged captures for the landing page
 ```
