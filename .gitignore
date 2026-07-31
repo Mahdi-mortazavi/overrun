@@ -1,0 +1,49 @@
+node_modules/
+dist/
+.wrangler/
+shots/
+*.log
+.DS_Store
+.env
+*.keystore
+*.jks
+android/app/build/
+android/build/
+android/.gradle/
+
+# Android signing material. The keystore and its base64 form are the one thing
+# in this repository that can never be regenerated or rotated without breaking
+# every install of the app — they belong in GitHub Secrets and in a password
+# manager, never in a commit.
+KEYSTORE_BASE64.txt
+release.keystore
+*.p12
+local.properties
+
+# Capacitor
+packages/android/android/local.properties
+packages/android/android/.idea/
+
+# Local secrets, never committed
+SECRETS.local.md
+release.keystore
+KEYSTORE_BASE64.txt
+
+# Generated art. tools/gen-icons.py and tools/beauty.mjs are the source of
+# truth; the PNGs and WebPs they produce are build artefacts. Keeping binaries
+# out of git means the mark can be retuned without a reviewable-by-nobody diff.
+packages/client/public/icons/
+packages/client/public/favicon.ico
+packages/client/public/og.png
+packages/client/public/apple-touch-icon.png
+packages/client/public/favicon-32.png
+packages/client/public/icon-512.png
+packages/client/public/shots/
+packages/landing/public/shots/
+packages/landing/public/*.png
+packages/landing/public/*.ico
+packages/android/android/app/src/main/res/mipmap-*/
+packages/android/android/app/src/main/res/drawable-*/
+
+# Fetched by CI; see .github/workflows/android.yml
+packages/android/android/gradle/wrapper/gradle-wrapper.jar

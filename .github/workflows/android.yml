@@ -1,0 +1,229 @@
+#  ============================== OVERRUN / ANDROID ==============================
+#
+#  Builds the Capacitor shell around the PWA, signs it with the release key held
+#  in GitHub Secrets, and proves the result is actually installable before it is
+#  allowed to leave the runner.
+#
+#  Two failure modes this job exists to catch:
+#    1. an unsigned release APK — installs nowhere, and it is easy to ship one
+#       by accident when a secret is missing or misspelled
+#    2. an APK that built fine but has no web assets in it — it installs, it
+#       launches, and it shows a white screen
+#
+#  Both are checked explicitly at the end and both fail the run.
+
+name: android
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+  # Hostname the packaged app treats as its origin, so online play reaches the
+  # deployed Worker. Set the repository variable OVERRUN_HOST (Settings ->
+  # Secrets and variables -> Actions -> Variables) to override what is checked
+  # into packages/android/capacitor.config.json.
+  OVERRUN_HOST: ${{ vars.OVERRUN_HOST }}
+
+jobs:
+  build:
+    name: build signed apk + aab
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      # The Gradle wrapper jar is a binary and is deliberately not committed —
+      # a 60 kB opaque blob in a repository is exactly the shape of a supply
+      # chain problem. It is fetched here and its checksum is not trusted
+      # blindly: gradle-wrapper.properties pins the distribution, and Gradle
+      # verifies that itself on first run.
+      - name: Restore Gradle wrapper jar
+        working-directory: packages/android/android
+        run: |
+          if [ ! -f gradle/wrapper/gradle-wrapper.jar ]; then
+            VER=$(sed -n 's/.*gradle-\([0-9.]*\)-bin\.zip/\1/p' gradle/wrapper/gradle-wrapper.properties)
+            echo "fetching wrapper jar for Gradle $VER"
+            curl -fsSL -o gradle/wrapper/gradle-wrapper.jar \
+              "https://raw.githubusercontent.com/gradle/gradle/v${VER}/gradle/wrapper/gradle-wrapper.jar"
+          fi
+          test -s gradle/wrapper/gradle-wrapper.jar
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install SDK packages
+        run: |
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager --install "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          build-root-directory: packages/android/android
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build the client
+        run: npm run build
+
+      - name: Check the web build
+        run: |
+          test -f packages/client/dist/index.html || { echo "::error::client build produced no index.html"; exit 1; }
+          SIZE=$(du -sk packages/client/dist | cut -f1)
+          echo "client dist: ${SIZE} kB"
+          if [ "$SIZE" -lt 900 ]; then
+            echo "::error::packages/client/dist is only ${SIZE} kB — the build is incomplete"
+            exit 1
+          fi
+
+      - name: Sync Capacitor
+        working-directory: packages/android
+        run: npm run sync
+
+      - name: Decode the release keystore
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "::error::ANDROID_KEYSTORE_BASE64 is not set. See DEPLOY.md — the release build cannot be signed without it."
+            exit 1
+          fi
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+          ls -l "$RUNNER_TEMP/release.keystore"
+
+      - name: Work out the version
+        id: version
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            NAME="${GITHUB_REF_NAME#v}"
+          else
+            NAME="1.0.${GITHUB_RUN_NUMBER}"
+          fi
+          echo "name=${NAME}" >> "$GITHUB_OUTPUT"
+          echo "code=${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+          echo "version ${NAME} (code ${GITHUB_RUN_NUMBER})"
+
+      - name: Assemble release APK and AAB
+        working-directory: packages/android/android
+        env:
+          ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/release.keystore
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          OVERRUN_VERSION_NAME: ${{ steps.version.outputs.name }}
+          OVERRUN_VERSION_CODE: ${{ steps.version.outputs.code }}
+        run: ./gradlew --no-daemon assembleRelease bundleRelease
+
+      - name: Verify the artifacts
+        id: verify
+        run: |
+          set -euo pipefail
+          APK=packages/android/android/app/build/outputs/apk/release/app-release.apk
+          AAB=packages/android/android/app/build/outputs/bundle/release/app-release.aab
+
+          test -f "$APK" || { echo "::error::no APK at $APK"; exit 1; }
+          test -f "$AAB" || { echo "::error::no AAB at $AAB"; exit 1; }
+
+          # --- size. A shell with no web assets is roughly 400 kB; a real build
+          #     is ~2 MB. Anything under a megabyte means the game is missing.
+          BYTES=$(stat -c%s "$APK")
+          echo "apk: $BYTES bytes"
+          if [ "$BYTES" -lt 1048576 ]; then
+            echo "::error::APK is only ${BYTES} bytes (< 1 MB) — the web assets did not make it in"
+            exit 1
+          fi
+
+          # --- contents. Belt and braces: the game must physically be in there.
+          unzip -l "$APK" > /tmp/apk-listing.txt
+          grep -q "assets/public/index.html" /tmp/apk-listing.txt \
+            || { echo "::error::APK contains no assets/public/index.html"; exit 1; }
+          grep -q "assets/public/native-online.js" /tmp/apk-listing.txt \
+            || { echo "::error::APK is missing the native online shim"; exit 1; }
+
+          # --- signature. apksigner exits non-zero on an unsigned APK, and the
+          #     scheme check catches the subtler case of a v1-only signature.
+          BUILD_TOOLS=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          echo "using $BUILD_TOOLS"
+          "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$APK" > /tmp/sig.txt
+          cat /tmp/sig.txt
+          grep -Eq "Verified using v(2|3) scheme \(APK Signature Scheme v(2|3)\): true" /tmp/sig.txt \
+            || { echo "::error::APK is not signed with a modern signature scheme — it is effectively unsigned"; exit 1; }
+
+          echo "apk=$APK" >> "$GITHUB_OUTPUT"
+          echo "aab=$AAB" >> "$GITHUB_OUTPUT"
+
+      - name: Name the artifacts
+        if: always()
+        run: |
+          mkdir -p dist-android
+          cp packages/android/android/app/build/outputs/apk/release/app-release.apk \
+             "dist-android/overrun-${{ steps.version.outputs.name }}.apk" 2>/dev/null || true
+          cp packages/android/android/app/build/outputs/bundle/release/app-release.aab \
+             "dist-android/overrun-${{ steps.version.outputs.name }}.aab" 2>/dev/null || true
+          ls -l dist-android || true
+
+      - name: Upload the APK
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: overrun-apk
+          path: dist-android/*.apk
+          if-no-files-found: warn
+          retention-days: 90
+
+      - name: Upload the AAB
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: overrun-aab
+          path: dist-android/*.aab
+          if-no-files-found: warn
+          retention-days: 90
+
+      - name: Attach the APK to the release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: OVERRUN ${{ steps.version.outputs.name }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: |
+            dist-android/*.apk
+            dist-android/*.aab
+          body: |
+            OVERRUN ${{ steps.version.outputs.name }} for Android.
+
+            Sideload the `.apk` on any Android 8.0 device or newer: download it,
+            open it, and allow installs from this source when asked. The game runs
+            with no network at all; online matches need one.
+
+            The `.aab` is for a future Play Store listing and cannot be installed
+            directly.

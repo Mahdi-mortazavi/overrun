@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<meta name="theme-color" content="#0E1620" />
+<meta name="description" content="OVERRUN — a fast browser arena shooter. Co-op waves, 4v4 team deathmatch and 2v2v2v2 squad royale. Plays offline, installs like an app." />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-title" content="OVERRUN" />
+<link rel="manifest" href="/manifest.webmanifest" />
+<link rel="apple-touch-icon" href="/icons/icon-180.png" />
+<link rel="icon" href="/icons/icon-192.png" />
+<title>OVERRUN</title>
+<link rel="stylesheet" href="/src/ui/style.css" />
+</head>
+<body>
+
+<canvas id="gl"></canvas>
+
+<!-- ============================ HUD ============================ -->
+<div id="hud" class="hidden">
+  <!-- top centre: wave / match state -->
+  <div id="topbar">
+    <div id="wave" class="num">WAVE 01</div>
+    <div id="waveName"></div>
+    <div id="intensity"><div id="intensityFill"></div></div>
+  </div>
+
+  <!-- top centre, PvP: the score that matters -->
+  <div id="teamScores" class="hidden"></div>
+
+  <div id="pauseBtn" class="tapzone">❚❚</div>
+  <div id="matchClock" class="num hidden">0:00</div>
+
+  <div id="stats">
+    <div id="score" class="num">0</div>
+    <div id="best">BEST 0</div>
+  </div>
+
+  <!-- the combo ladder: it ratchets, it decays, it is loud -->
+  <div id="ladder">
+    <div id="comboNum" class="num">0<small>x</small></div>
+    <div id="comboDecay"><i></i></div>
+  </div>
+
+  <div id="vitals">
+    <div id="nameTag"></div>
+    <div class="bar hp"><i id="hpFill"></i></div>
+    <div class="bar sh"><i id="shFill"></i></div>
+    <div id="hpNum"><b>100</b>/100 <span id="shNum"></span></div>
+  </div>
+
+  <!-- teammates, co-op and squad -->
+  <div id="squadList"></div>
+
+  <div id="killfeed"></div>
+  <div id="minimap"><canvas id="minimapCv" width="132" height="132"></canvas></div>
+
+  <div id="weapon" class="tapzone"><b id="wName">SMG</b> <span id="wSwap">[Q] SWAP</span></div>
+
+  <div id="pads">
+    <div class="pad sm off tapzone" id="ab2"><div class="cd"></div><span>—</span><i class="k">F</i></div>
+    <div class="pad sm off tapzone" id="ab1"><div class="cd"></div><span>—</span><i class="k">E</i></div>
+    <div class="pad big tapzone" id="dashPad"><div class="cd"></div><span>DASH</span>
+      <div id="dashPips"><i class="on"></i><i class="on"></i></div></div>
+  </div>
+
+  <div id="dmgLayer"></div>
+  <div id="indicators"></div>
+  <div id="banner"><div class="b1"></div><div class="b2"></div></div>
+  <div id="reviveBar" class="hidden"><div class="rlabel">REVIVING</div><div class="rtrack"><i></i></div></div>
+  <div id="downNotice" class="hidden">DOWN — HOLD ON</div>
+  <div id="respawnNotice" class="hidden">RESPAWNING <b>4</b></div>
+</div>
+
+<!-- ========================== TITLE ============================ -->
+<div class="panel show" id="titleScreen"><div class="inner">
+  <div class="logo">
+    <h1>OVERRUN</h1>
+    <div class="tag">YOU ARE OUTNUMBERED. STAY MOVING.</div>
+  </div>
+  <div class="modegrid" id="modeGrid"></div>
+  <div class="row-center">
+    <div class="btn ghost" id="joinCodeBtn">JOIN WITH CODE</div>
+    <div class="btn ghost" id="settingsBtn">SETTINGS</div>
+    <div class="btn ghost" id="howBtn">HOW TO PLAY</div>
+  </div>
+  <div class="hint" id="titleHint"></div>
+  <div id="profileStrip"></div>
+</div></div>
+
+<!-- ========================== LOBBY ============================ -->
+<div class="panel" id="lobbyScreen"><div class="inner">
+  <div class="lbl" id="lobbyMode">TEAM DEATHMATCH</div>
+  <div id="roomCodeWrap">
+    <div class="lbl small">ROOM CODE</div>
+    <div id="roomCode" class="code">------</div>
+    <div class="row-center">
+      <div class="btn ghost sm" id="copyCodeBtn">COPY LINK</div>
+      <div class="btn ghost sm" id="shareBtn">SHARE</div>
+    </div>
+  </div>
+  <div id="lobbyPlayers"></div>
+  <div id="lobbyStatus" class="hint">WAITING FOR PLAYERS…</div>
+  <div class="row-center">
+    <div class="btn" id="readyBtn">READY</div>
+    <div class="btn ghost" id="leaveLobbyBtn">LEAVE</div>
+  </div>
+</div></div>
+
+<!-- ======================= JOIN BY CODE ======================== -->
+<div class="panel" id="joinScreen"><div class="inner">
+  <div class="lbl">ENTER ROOM CODE</div>
+  <input id="codeInput" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABC123" />
+  <div id="joinError" class="err"></div>
+  <div class="row-center">
+    <div class="btn" id="joinGoBtn">JOIN</div>
+    <div class="btn ghost" id="joinBackBtn">BACK</div>
+  </div>
+</div></div>
+
+<!-- ========================= UPGRADES ========================== -->
+<div class="panel" id="upgradeScreen"><div class="inner">
+  <div class="lbl">WAVE CLEARED — CHOOSE ONE</div>
+  <div id="cards"></div>
+  <div class="btn ghost" id="reroll">REROLL (1)</div>
+  <div id="choiceTimer" class="hint"></div>
+</div></div>
+
+<!-- ========================== RESULTS ========================== -->
+<div class="panel" id="deathScreen"><div class="inner">
+  <h1 id="resultTitle">OVERRUN</h1>
+  <div class="tag" id="deathLine">THE ARENA KEEPS THE SCORE</div>
+  <div class="grid" id="summary"></div>
+  <div id="scoreboard"></div>
+  <div id="xpBar" class="hidden">
+    <div class="lbl small"><span id="xpLevel">LV 1</span><span id="xpGain">+0 XP</span></div>
+    <div class="xptrack"><i id="xpFill"></i></div>
+  </div>
+  <div class="row-center">
+    <div class="btn" id="retryBtn">PLAY AGAIN</div>
+    <div class="btn ghost" id="menuBtn">MENU</div>
+  </div>
+</div></div>
+
+<!-- =========================== PAUSE =========================== -->
+<div class="panel" id="pauseScreen"><div class="inner">
+  <div class="lbl" id="pauseTitle">PAUSED</div>
+  <div id="settingsList"></div>
+  <div class="row-center">
+    <div class="btn" id="resumeBtn">RESUME</div>
+    <div class="btn ghost" id="quitBtn">END RUN</div>
+  </div>
+</div></div>
+
+<!-- ========================= HOW TO PLAY ======================== -->
+<div class="panel" id="howScreen"><div class="inner">
+  <div class="lbl">HOW TO PLAY</div>
+  <div id="howBody"></div>
+  <div class="btn" id="howBackBtn">GOT IT</div>
+</div></div>
+
+<!-- ========================== SYSTEM ============================ -->
+<div id="rotate"><div><div class="ph"></div><div class="lbl">ROTATE TO LANDSCAPE</div></div></div>
+<div id="boot"><div class="bootinner"><div class="bootlogo">OVERRUN</div><div class="bootbar"><i id="bootFill"></i></div><div class="boottext" id="bootText">BUILDING THE ARENA</div></div></div>
+<div id="toast"></div>
+<div id="netbadge" class="hidden"><i></i><span id="pingText">--</span></div>
+<div id="debug"></div>
+
+<script type="module" src="/src/main.js"></script>
+</body>
+</html>

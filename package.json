@@ -1,0 +1,21 @@
+{
+  "name": "overrun",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm --workspace @overrun/client run dev",
+    "build": "npm --workspace @overrun/client run build",
+    "sim": "node tools/simtest.mjs",
+    "shots": "node tools/shots.mjs",
+    "press": "node tools/beauty.mjs",
+    "assets": "python3 tools/gen-icons.py && python3 packages/android/scripts/gen-android-assets.py",
+    "prebuild": "python3 tools/gen-icons.py"
+  },
+  "devDependencies": {
+    "playwright": "^1.49.0"
+  }
+}

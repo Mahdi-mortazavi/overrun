@@ -1,0 +1,82 @@
+#  ============================== OVERRUN / DEPLOY ==============================
+#
+#  Ships the game: the static client and the Worker that fronts it go out
+#  together in a single `wrangler deploy`, because wrangler uploads
+#  packages/client/dist as the Worker's asset bundle (see [assets] in
+#  packages/server/wrangler.toml).
+#
+#  The headless simulation runs first and gates everything. It exercises every
+#  mode, the director, the protocol encoder and the snapshot round trip; if it
+#  throws, the deploy does not happen. It is the cheapest guard available
+#  against pushing a build where the shared simulation and the Worker disagree.
+
+name: deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+env:
+  PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+
+jobs:
+  deploy:
+    name: simulate, build, deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Simulation gate
+        run: node tools/simtest.mjs
+
+      - name: Build the client
+        run: npm run build
+
+      - name: Check the web build
+        run: |
+          test -f packages/client/dist/index.html || { echo "::error::client build produced no index.html"; exit 1; }
+          test -f packages/client/dist/sw.js || { echo "::error::service worker was not generated"; exit 1; }
+          SIZE=$(du -sk packages/client/dist | cut -f1)
+          echo "client dist: ${SIZE} kB"
+          if [ "$SIZE" -lt 900 ]; then
+            echo "::error::packages/client/dist is only ${SIZE} kB — refusing to deploy an incomplete build"
+            exit 1
+          fi
+
+      - name: Deploy the Worker
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: packages/server
+          command: deploy
+
+      - name: Summary
+        run: |
+          {
+            echo "### OVERRUN deployed"
+            echo ""
+            echo "* commit \`${GITHUB_SHA::7}\`"
+            echo "* client: $(du -sh packages/client/dist | cut -f1) of static assets"
+            echo "* worker: packages/server (MatchRoom + Matchmaker durable objects)"
+          } >> "$GITHUB_STEP_SUMMARY"
