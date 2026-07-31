@@ -18,10 +18,14 @@ binding = "ASSETS"
 # The client is a single-page app: /j/ABC123 invite links and /play must all
 # resolve to index.html instead of 404ing.
 not_found_handling = "single-page-application"
-# Only these two prefixes are worth a Worker invocation. Everything else is
-# served straight off the asset edge, which is free and does not count against
-# the 100k requests/day the free plan allows.
-run_worker_first = ["/api/*", "/ws"]
+# Only these prefixes are worth a Worker invocation. Everything else is served
+# straight off the asset edge, which is free and does not count against the
+# 100k requests/day the free plan allows.
+#
+# /landing and /download have to be here even though they look static: without
+# them the asset edge answers first, misses, and hands back index.html via the
+# SPA fallback — so the marketing page silently served the game instead.
+run_worker_first = ["/api/*", "/ws", "/landing", "/about", "/download", "/download/*"]
 
 [vars]
 # Public project URL. The anon key is publishable by design (RLS is what
