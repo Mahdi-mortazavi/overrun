@@ -13,8 +13,11 @@
 name: deploy
 
 on:
-  push:
-    branches: [main]
+  # Deployment is normally done by Cloudflare Workers Builds, which watches
+  # this repository directly. This workflow is the manual fallback for when
+  # you want to deploy from CI instead — two automatic deploys racing for the
+  # same Worker is a good way to ship a half-built assets directory.
+  workflow_dispatch:
   workflow_dispatch:
 
 permissions:
