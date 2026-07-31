@@ -45,3 +45,12 @@ node tools/beauty.mjs       # staged captures for the landing page
 ## Deploying
 
 See `DEPLOY.md`.
+
+## Licence
+
+Apache License 2.0 — see [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE).
+
+You may use, modify, distribute and sell this, including commercially, as long
+as you keep the notice and state your changes. The patent grant is the reason
+Apache 2.0 was chosen over MIT: anyone contributing to this cannot later sue a
+user over a patent covering what they contributed.

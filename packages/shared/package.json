@@ -7,5 +7,6 @@
   "exports": {
     ".": "./src/index.js",
     "./*": "./src/*"
-  }
+  },
+  "license": "Apache-2.0"
 }
