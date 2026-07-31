@@ -27,7 +27,7 @@ run_worker_first = ["/api/*", "/ws"]
 # Public project URL. The anon key is publishable by design (RLS is what
 # protects the data), so it lives here rather than in a secret.
 SUPABASE_URL = "https://irkxujavsreiwmoppwhh.supabase.co"
-SUPABASE_ANON_KEY = "set-me-or-the-leaderboard-returns-an-empty-array"
+SUPABASE_ANON_KEY = "sb_publishable_Xa3hHK1e4F_zIxMff25c8Q_el9mRVhq"
 # Non-default Postgres schema; Supabase REST needs it named explicitly.
 SUPABASE_SCHEMA = "game"
 
