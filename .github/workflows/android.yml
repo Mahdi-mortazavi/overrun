@@ -106,6 +106,19 @@ jobs:
             exit 1
           fi
 
+      # Size proves the build produced files. It does not prove the game runs,
+      # and the two are not the same thing: a hard-coded 44.1 kHz audio buffer
+      # once shipped a perfectly well-formed build in which no match could be
+      # started on any 48 kHz device — which is nearly all of them, phones
+      # included. This drives a real browser at three sample rates and refuses
+      # to package an APK that cannot start a match.
+      - name: Prove a match starts (all audio sample rates)
+        run: |
+          npm i --no-save playwright
+          npx playwright install --with-deps chromium
+          CHROMIUM_PATH="$(node -e "console.log(require('playwright').chromium.executablePath())")" \
+            node tools/audiorate.mjs
+
       - name: Sync Capacitor
         working-directory: packages/android
         run: npm run sync
