@@ -25,7 +25,10 @@ export function freshMods() {
     pierce: 0, bounces: 0, explosive: 0, lifesteal: 0,
     dashExtra: 0, dashTrail: 0, slowAura: 0, magnet: 1,
     shieldBonus: 0, moveSpeed: 1, comboRamp: 1, split: 0,
-    overkill: 0, stagger: 0, thorns: 0, burn: 0
+    overkill: 0, stagger: 0, thorns: 0, burn: 0,
+    // Handling multipliers. 1 is the weapon as designed; a brace upgrade
+    // takes these below 1.
+    spread: 1, recoil: 1, knock: 1
   };
 }
 
@@ -50,6 +53,8 @@ export const UPGRADES = [
   { id: 'combo',    name: 'BLOODRUSH',     icon: '▲', type: 'pas', max: 3, desc: 'Combo ramps fire rate more', apply: (s, p) => { p.mods.comboRamp += 1; } },
   { id: 'stagger',  name: 'CONCUSSION',    icon: '◙', type: 'pas', max: 1, desc: 'Crits stagger enemies',    apply: (s, p) => { p.mods.stagger = 1; } },
   { id: 'projspd',  name: 'HOT LOADS',     icon: '→', type: 'pas', max: 3, desc: '+30% projectile speed',    apply: (s, p) => { p.mods.projSpeed *= 1.3; } },
+  { id: 'brace',    name: 'STABILISER',    icon: '⊟', type: 'pas', max: 3, desc: '-25% spread and recoil',   apply: (s, p) => { p.mods.spread *= 0.75; p.mods.recoil *= 0.75; } },
+  { id: 'impact',   name: 'IMPACT ROUNDS', icon: '⇱', type: 'pas', max: 3, desc: '+45% knockback',           apply: (s, p) => { p.mods.knock *= 1.45; } },
 
   // Weapons arrive as choices, so a build can commit to one.
   { id: 'w1', name: 'BREACHER',     icon: '⌂', type: 'act', max: 1, desc: 'Unlock: close-range shotgun', apply: (s, p) => s.unlockWeapon(p, 1) },

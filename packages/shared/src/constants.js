@@ -44,8 +44,37 @@ export const T = {
 
   player: {
     speed: 14.2,          // fast enough that a rusher pack is escapable, not free
-    accel: 145,           // ~90% top speed in <120ms — snappy, never floaty
-    friction: 13,
+
+    /* Locomotion is friction-and-accelerate, not lerp-to-target.
+
+       The difference is the whole feel of the game. Lerping toward a desired
+       velocity gives movement that is instant in every direction equally —
+       responsive, but weightless, because reversing costs exactly what
+       continuing costs. Applying friction every frame and then accelerating
+       only along the input direction means a reversal has to pay for the
+       speed it already had. You feel the turn. Nothing about the response
+       delay is artificial: input still bites on the first frame.
+
+       accel must comfortably exceed speed * friction or top speed silently
+       drops below `speed` — that relationship is the one thing to preserve
+       when retuning these. */
+    accel: 200,
+    friction: 9.0,
+    stopSpeed: 3.2,       // below this, friction works at a floor rate so the
+                          // last of the drift snaps off instead of oozing
+    turnRate: 13.5,       // rad/s the body swings toward the aim. Purely
+                          // cosmetic — shots always leave along the true aim —
+                          // but it is most of what makes the character read as
+                          // a body rather than a cursor.
+
+    /* Impulses — recoil, knockback, explosions — live in their own velocity
+       channel that is NOT clamped to top speed and decays on its own curve.
+       Folded into the locomotion velocity instead, every impulse was eaten by
+       the speed clamp within a frame or two, which is precisely why being
+       shot used to feel like nothing at all. */
+    impulseDrag: 6.5,
+    impulseMax: 30,
+
     radius: 0.75,
     hp: 100,
     shield: 50,
@@ -59,7 +88,38 @@ export const T = {
 
   dash: {
     speed: 46, time: 0.155, charges: 2, recharge: 2.4,
-    iframes: 0.26         // slightly longer than the dash: forgiving on purpose
+    iframes: 0.26,        // slightly longer than the dash: forgiving on purpose
+    // Front-loaded: a dash that leaves at full speed and eases out reads as a
+    // burst of effort. A constant-speed dash reads as teleporting.
+    frontLoad: 1.35,
+    exitSpeed: 0.82       // fraction of run speed kept on exit, so a dash flows
+                          // into a sprint instead of stopping dead
+  },
+
+  /* Weapon handling that is not per-weapon balance.
+
+     Bloom is the accuracy cost of holding the trigger. It exists so that
+     sustained fire is a decision rather than a default, and it recovers fast
+     enough that tapping is always rewarded. */
+  gun: {
+    /* These two are a pair and only make sense read against fire rate.
+
+       Per shot the cone opens by `bloomPerShot × the weapon's base spread`;
+       every second it closes by `bloomRecover` radians flat. A weapon only
+       blooms if it fires fast enough to outrun the recovery — so the SMG at
+       12 rounds/s reaches its ceiling in about a second of held fire, while
+       the breacher at 1.7 rounds/s never blooms at all, which is right: you
+       do not spray a shotgun.
+
+       Set recovery too high relative to the per-shot gain and bloom silently
+       does nothing whatsoever, which is exactly what the first tuning of this
+       did — the numbers looked reasonable in isolation and were an order of
+       magnitude apart in practice. tools/physics.mjs asserts it now. */
+    bloomPerShot: 0.37,
+    bloomRecover: 0.16,
+    bloomMax: 2.4,        // ceiling as a multiple of the weapon's base spread
+    recoilScale: 1.9,     // how hard a shot shoves the shooter
+    kickPerShot: 0.055    // camera/weapon kick, radians
   },
 
   combo: {
@@ -116,7 +176,18 @@ export const T = {
     // Flow field
     gridCell: 2.4, gridRebuild: 0.30,
     // Fairness
-    minTelegraph: 0.25
+    minTelegraph: 0.25,
+    /* Enemies carry the same impulse channel players do. Steering used to
+       damp straight toward the desired velocity every frame, which erased
+       knockback within about one frame — a shotgun at point blank moved a
+       rusher by nothing. Impulse is integrated separately and drags out on
+       its own, so weight is visible. Heavier drag than the player because an
+       enemy sliding for a second looks broken, not weighty. */
+    impulseDrag: 8.5,
+    impulseMax: 42,
+    staggerPerKnock: 0.018,  // seconds of interrupted steering per unit of
+                             // effective knockback, after poise
+    staggerMax: 0.42
   },
 
   vfx: { maxParticles: 1400, maxDamageNumbers: 26, maxDecals: 48 },

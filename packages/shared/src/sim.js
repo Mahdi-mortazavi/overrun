@@ -109,7 +109,10 @@ export class Sim {
       id, name: opts.name || 'RUNNER', bot: !!opts.bot, connected: true,
       team: opts.team ?? 0, skin: opts.skin ?? 0,
       x: 0, z: 0, px: 0, pz: 0, vx: 0, vz: 0,
+      // Impulse velocity, integrated and drained separately from locomotion.
+      ivx: 0, ivz: 0,
       aimA: 0, faceA: 0, moveA: 0,
+      bloom: 0,             // accumulated fire inaccuracy, in radians
       hp: T.player.hp, maxHp: T.player.hp,
       shield: T.player.shield, maxShield: T.player.shield, shieldT: 0,
       iframe: 0, protectT: 0,
@@ -168,6 +171,8 @@ export class Sim {
     this.world.collide(p, T.player.radius);
     p.px = p.x; p.pz = p.z;
     p.vx = p.vz = 0;
+    p.ivx = p.ivz = 0;
+    p.bloom = 0;
     p.hp = p.maxHp;
     p.shield = p.maxShield + p.mods.shieldBonus;
     p.alive = true; p.down = false; p.downT = 0; p.reviveT = 0;
@@ -342,14 +347,23 @@ export class Sim {
       this.damagePlayer(p, 9 * dt, p.x, p.z, null, true);
     }
 
-    // --- movement: kinematic, snappy, never solver-driven ---
+    /* --- movement -------------------------------------------------------
+       Friction every frame, then acceleration along the input direction only.
+       See T.player for why this shape and not lerp-to-target. */
     const slowK = p.slowT > 0 ? 0.62 : 1;
     const speed = T.player.speed * m.moveSpeed * slowK;
+
     if (p.dashT > 0) {
       p.dashT -= dt;
-      p.x += p.dashDirX * T.dash.speed * dt;
-      p.z += p.dashDirZ * T.dash.speed * dt;
-      p.vx = p.dashDirX * speed; p.vz = p.dashDirZ * speed;
+      // Front-loaded so the dash leaves hard and eases out.
+      const k = Math.max(0, p.dashT / T.dash.time);
+      const burst = T.dash.speed * (T.dash.frontLoad - (T.dash.frontLoad - 1) * (1 - k) * 2);
+      const dashSpeed = Math.max(T.dash.speed * 0.45, burst);
+      p.x += p.dashDirX * dashSpeed * dt;
+      p.z += p.dashDirZ * dashSpeed * dt;
+      // Leave with momentum rather than stopping dead when the dash expires.
+      p.vx = p.dashDirX * speed * T.dash.exitSpeed;
+      p.vz = p.dashDirZ * speed * T.dash.exitSpeed;
       if (m.dashTrail > 0) {
         const n = this.hash.query(p.x, p.z, 3.4, this.qbuf);
         for (let i = 0; i < n; i++) {
@@ -360,23 +374,53 @@ export class Sim {
         }
       }
     } else {
-      const ax = inp.mx * T.player.accel * m.moveSpeed;
-      const az = inp.mz * T.player.accel * m.moveSpeed;
-      p.vx += ax * dt; p.vz += az * dt;
-      const fr = 1 - Math.min(1, T.player.friction * dt);
-      if (Math.abs(inp.mx) < 0.01) p.vx *= fr;
-      if (Math.abs(inp.mz) < 0.01) p.vz *= fr;
+      // Friction, with a floor near zero so the last of the drift snaps off.
       const sp = Math.hypot(p.vx, p.vz);
-      if (sp > speed) { p.vx = (p.vx / sp) * speed; p.vz = (p.vz / sp) * speed; }
+      if (sp > 0) {
+        const ref = sp < T.player.stopSpeed ? T.player.stopSpeed : sp;
+        const keep = Math.max(0, sp - ref * T.player.friction * dt) / sp;
+        p.vx *= keep; p.vz *= keep;
+      }
+      // Accelerate only along the wish direction, and only up to the amount
+      // still missing from wish speed. This is what makes a reversal cost
+      // something while a standing start still bites immediately.
+      const wish = Math.min(1, Math.hypot(inp.mx, inp.mz));
+      if (wish > 1e-4) {
+        const nx = inp.mx / (wish || 1), nz = inp.mz / (wish || 1);
+        const wishSpeed = speed * wish;
+        const cur = p.vx * nx + p.vz * nz;
+        const add = Math.min(wishSpeed - cur, T.player.accel * m.moveSpeed * dt);
+        if (add > 0) { p.vx += nx * add; p.vz += nz * add; }
+      }
+      // Safety clamp: locomotion alone can never exceed top speed, whatever
+      // the tuning does. Impulses live outside this on purpose.
+      const sp2 = Math.hypot(p.vx, p.vz);
+      if (sp2 > speed) { p.vx = (p.vx / sp2) * speed; p.vz = (p.vz / sp2) * speed; }
       p.x += p.vx * dt; p.z += p.vz * dt;
     }
+
+    // Impulse channel: recoil, knockback, blasts. Unclamped, self-draining.
+    if (p.ivx !== 0 || p.ivz !== 0) {
+      p.x += p.ivx * dt; p.z += p.ivz * dt;
+      const k = Math.max(0, 1 - T.player.impulseDrag * dt);
+      p.ivx *= k; p.ivz *= k;
+      if (Math.abs(p.ivx) < 0.02) p.ivx = 0;
+      if (Math.abs(p.ivz) < 0.02) p.ivz = 0;
+    }
+
     this.world.collide(p, T.player.radius);
 
     // Aim. Assist is applied client-side before the input is sent, so the
     // server never has to guess what the player meant.
     p.aimA = Math.atan2(inp.az, inp.ax);
-    p.faceA = p.aimA;
+    // The body swings toward the aim at a finite rate. Shots always leave
+    // along aimA, so this costs the player no accuracy — it only stops the
+    // character reading as a weightless cursor.
+    p.faceA += angleDelta(p.faceA, p.aimA) * Math.min(1, T.player.turnRate * dt);
     if (Math.hypot(p.vx, p.vz) > 0.5) p.moveA = Math.atan2(p.vz, p.vx);
+
+    // Weapon bloom recovers whenever it is not being fed by fire.
+    if (p.bloom > 0) p.bloom = Math.max(0, p.bloom - T.gun.bloomRecover * dt);
 
     // --- shield regen ---
     p.shieldT = Math.max(0, p.shieldT - dt);
@@ -461,8 +505,16 @@ export class Sim {
 
     const mx = p.x + Math.cos(p.aimA) * 1.15;
     const mz = p.z + Math.sin(p.aimA) * 1.15;
+
+    /* Bloom. The cone opens while the trigger is held and closes when it is
+       not, so holding fire across a room is a choice with a price and tapping
+       is always the accurate option. A weapon with no base spread — the rail —
+       stays exact: opening a cone on a precision weapon just feels broken. */
+    const bloom = w.spread > 0 ? Math.min(p.bloom, w.spread * (T.gun.bloomMax - 1)) : 0;
+    const cone = (w.spread + bloom) * m.spread;
+
     for (let i = 0; i < w.pellets; i++) {
-      const a = p.aimA + this.rng.range(w.spread, -w.spread);
+      const a = p.aimA + (cone > 0 ? this.rng.range(cone, -cone) : 0);
       this.spawnProjectile({
         x: mx, z: mz,
         vx: Math.cos(a) * w.speed * m.projSpeed,
@@ -470,10 +522,24 @@ export class Sim {
         def: w, owner: p, hostile: false
       });
     }
-    p.vx -= Math.cos(p.aimA) * w.recoil;
-    p.vz -= Math.sin(p.aimA) * w.recoil;
+    if (w.spread > 0) {
+      p.bloom = Math.min(w.spread * (T.gun.bloomMax - 1), p.bloom + w.spread * T.gun.bloomPerShot);
+    }
+
+    /* Recoil goes into the impulse channel, so it survives the top-speed
+       clamp and is actually felt. A breacher fired while sprinting now
+       genuinely checks your momentum, which is what makes it read as a
+       shotgun rather than a sound effect. */
+    const kick = w.recoil * T.gun.recoilScale * (m.recoil ?? 1);
+    p.ivx -= Math.cos(p.aimA) * kick;
+    p.ivz -= Math.sin(p.aimA) * kick;
+    const ispd = Math.hypot(p.ivx, p.ivz);
+    if (ispd > T.player.impulseMax) {
+      p.ivx = (p.ivx / ispd) * T.player.impulseMax;
+      p.ivz = (p.ivz / ispd) * T.player.impulseMax;
+    }
     p.recoil = 1;
-    this.events.push(EV.SHOT, { id: p.id, w: w.id, x: mx, z: mz, a: p.aimA, shake: w.shake });
+    this.events.push(EV.SHOT, { id: p.id, w: w.id, x: mx, z: mz, a: p.aimA, shake: w.shake, cone });
   }
 
   addCombo(p) {
@@ -506,6 +572,25 @@ export class Sim {
     // The combo ladder is a risk currency: getting hit costs you most of it.
     p.combo = Math.max(0, (p.combo * 0.4) | 0);
     if (attacker && attacker.isPlayer) attacker.damageDealt += amount;
+
+    /* Being hit shoves you. Scaled by the size of the hit and capped, so a
+       torch tick nudges and a bruiser slam genuinely moves you — but never so
+       far that you lose control of where you end up. Damage you take through
+       burn has no direction and is passed srcX/srcZ at your own feet, which
+       the length check below filters out. */
+    if (srcX !== undefined && srcZ !== undefined) {
+      const dx = p.x - srcX, dz = p.z - srcZ, d = Math.hypot(dx, dz);
+      if (d > 0.05) {
+        const push = Math.min(11, 2.2 + amount * 0.16);
+        p.ivx += (dx / d) * push;
+        p.ivz += (dz / d) * push;
+        const ispd = Math.hypot(p.ivx, p.ivz);
+        if (ispd > T.player.impulseMax) {
+          p.ivx = (p.ivx / ispd) * T.player.impulseMax;
+          p.ivz = (p.ivz / ispd) * T.player.impulseMax;
+        }
+      }
+    }
 
     this.events.push(EV.HURT, {
       id: p.id, dmg: Math.round(amount), x: p.x, z: p.z,
@@ -573,6 +658,7 @@ export class Sim {
     e.key = key; e.def = def;
     e.x = e.px = x; e.z = e.pz = z;
     e.vx = e.vz = 0;
+    e.ivx = e.ivz = 0;
     e.maxHp = e.hp = def.hp * hpScale * (opts.hpMul || 1);
     e.r = def.r * def.scale;
     e.scale = def.scale;
@@ -667,6 +753,16 @@ export class Sim {
       e.vz = damp(e.vz, steerOut.z * spd, 7, dt);
       e.x += e.vx * dt;
       e.z += e.vz * dt;
+
+      // Impulse channel — knockback and blasts, outside the steering damp.
+      if (e.ivx !== 0 || e.ivz !== 0) {
+        e.x += e.ivx * dt; e.z += e.ivz * dt;
+        const k = Math.max(0, 1 - T.ai.impulseDrag * dt);
+        e.ivx *= k; e.ivz *= k;
+        if (Math.abs(e.ivx) < 0.03) e.ivx = 0;
+        if (Math.abs(e.ivz) < 0.03) e.ivz = 0;
+      }
+
       this.world.collide(e, e.r);
 
       // Facing: toward what it believes, not toward what is true.
@@ -826,11 +922,27 @@ export class Sim {
     e.flash = 0.12;
     if (attacker && attacker.isPlayer) attacker.damageDealt += dmg;
 
+    /* Knockback goes into the impulse channel, never into e.vx.
+
+       Steering damps velocity toward the desired heading every frame, so a
+       knockback written into e.vx was gone in about one frame — a breacher
+       fired into a rusher's face moved it by nothing at all. Integrated
+       separately, the shove is visible, and it still cannot make an enemy
+       outrun its own steering once the impulse drains. */
     if (knock) {
       const dx = e.x - fromX, dz = e.z - fromZ, d = Math.hypot(dx, dz) || 1;
-      const k = knockScale(e.def, knock);
-      e.vx += (dx / d) * k; e.vz += (dz / d) * k;
-      if (crit && m && m.stagger) e.staggerT = 0.4;
+      const k = knockScale(e.def, knock * (m && m.knock ? m.knock : 1));
+      e.ivx += (dx / d) * k; e.ivz += (dz / d) * k;
+      const ispd = Math.hypot(e.ivx, e.ivz);
+      if (ispd > T.ai.impulseMax) {
+        e.ivx = (e.ivx / ispd) * T.ai.impulseMax;
+        e.ivz = (e.ivz / ispd) * T.ai.impulseMax;
+      }
+      // A big enough hit interrupts. Poise is already folded into k, so a
+      // warden shrugs off what staggers a rusher without a second rule.
+      const stagger = Math.min(T.ai.staggerMax, k * T.ai.staggerPerKnock);
+      if (stagger > 0.04) e.staggerT = Math.max(e.staggerT, stagger);
+      if (crit && m && m.stagger) e.staggerT = Math.max(e.staggerT, 0.4);
     }
 
     if (!silent) {
@@ -1231,6 +1343,7 @@ function blankEnemy() {
   return {
     alive: false, eid: 0, key: 'rusher', def: null, isEnemy: true,
     x: 0, z: 0, px: 0, pz: 0, vx: 0, vz: 0,
+    ivx: 0, ivz: 0,
     hp: 1, maxHp: 1, r: 0.6, speed: 1, scale: 1,
     flash: 0, atkCd: 0, windup: 0, windupKind: '',
     slowT: 0, staggerT: 0, burnT: 0, burnBy: null,

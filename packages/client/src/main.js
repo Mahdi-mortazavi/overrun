@@ -606,6 +606,9 @@ class App {
         // a teleport, a hit we did not see). Accept the server's word.
         this.me.x = mine.x; this.me.z = mine.z;
         this.me.vx = mine.vx; this.me.vz = mine.vz;
+        // The server's position already contains whatever impulse produced
+        // this divergence. Keeping our own would apply it a second time.
+        this.me.ivx = 0; this.me.ivz = 0;
       } else if (err > 0.02) {
         // Small divergence: replay unacknowledged inputs from the server's
         // position and ease into the result, so a correction never snaps.

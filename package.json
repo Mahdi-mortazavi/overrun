@@ -13,7 +13,9 @@
     "shots": "node tools/shots.mjs",
     "press": "node tools/beauty.mjs",
     "assets": "python3 tools/gen-icons.py && python3 packages/android/scripts/gen-android-assets.py",
-    "test:audiorate": "node tools/audiorate.mjs"
+    "test:audiorate": "node tools/audiorate.mjs",
+    "test:physics": "node tools/physics.mjs",
+    "test:play": "node tools/livecheck.mjs local"
   },
   "license": "Apache-2.0",
   "author": "Mohammad Mahdi Mortazavi",
