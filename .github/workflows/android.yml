@@ -245,6 +245,11 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/') && steps.signing.outputs.mode == 'release'
         uses: softprops/action-gh-release@v2
         with:
+          # Named explicitly. Left to infer, the action matches on tag and will
+          # happily pick up a stale DRAFT release carrying the same tag — the
+          # kind a deleted-and-recreated tag leaves behind — and then fail to
+          # upload into it.
+          tag_name: ${{ github.ref_name }}
           name: OVERRUN ${{ steps.version.outputs.name }}
           draft: false
           prerelease: false
@@ -266,6 +271,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/') && steps.signing.outputs.mode == 'testkey'
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ github.ref_name }}
           name: OVERRUN ${{ steps.version.outputs.name }} (test key)
           draft: false
           prerelease: true

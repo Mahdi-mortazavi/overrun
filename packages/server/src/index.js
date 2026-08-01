@@ -91,36 +91,33 @@ function json(body, status = 200, extra = {}) {
    `releases/latest/download/<name>` would be simpler, but it is wrong twice
    over here: it ignores pre-releases, and it needs the asset file name to be
    fixed forever, whereas CI stamps the version and the signing mode into it
-   (overrun-1.0.0-testkey.apk). So the newest release that actually carries an
-   APK is resolved from the API instead, and the answer is cached at the edge —
-   the unauthenticated GitHub rate limit is per IP, and a Worker has very few
-   of those. A stale-but-valid URL beats a 404, so the cached copy is served
-   for an hour and any failure falls back to the tagless path. */
+   (overrun-1.0.1-testkey.apk). So the newest release that actually carries an
+   APK is resolved from the API instead.
 
-const GH_RELEASES = 'https://api.github.com/repos/Mahdi-mortazavi/overrun/releases?per_page=10';
+   What is cached is the API RESPONSE, not the URL derived from it. Caching the
+   derived URL is the tempting version and it is wrong: assets can be replaced
+   or a release re-cut, and a cached URL then points at something that has
+   stopped existing until the entry expires. Caching the response means a stale
+   read is at worst a few minutes out of date and self-heals; it also keeps the
+   unauthenticated GitHub rate limit — which is per IP, and a Worker has very
+   few of those — comfortably out of reach. Any failure falls back to the
+   tagless path. */
+
+const GH_RELEASES = 'https://api.github.com/repos/Mahdi-mortazavi/overrun/releases?per_page=15';
 const APK_FALLBACK = 'https://github.com/Mahdi-mortazavi/overrun/releases/latest/download/overrun.apk';
-const APK_CACHE_KEY = 'https://overrun.internal/cache/apk-url';
 
 async function latestApkUrl() {
-  const cache = caches.default;
-  const key = new Request(APK_CACHE_KEY);
-  const hit = await cache.match(key);
-  if (hit) return hit.text();
-
   try {
     const res = await fetch(GH_RELEASES, {
-      headers: { accept: 'application/vnd.github+json', 'user-agent': 'overrun-worker' }
+      headers: { accept: 'application/vnd.github+json', 'user-agent': 'overrun-worker' },
+      cf: { cacheTtl: 600, cacheEverything: true }
     });
     if (!res.ok) return APK_FALLBACK;
     const releases = await res.json();
     for (const rel of releases) {
       if (rel.draft) continue;
       const apk = (rel.assets || []).find(a => a.name.endsWith('.apk'));
-      if (!apk) continue;
-      await cache.put(key, new Response(apk.browser_download_url, {
-        headers: { 'cache-control': 'max-age=3600', 'content-type': 'text/plain' }
-      }));
-      return apk.browser_download_url;
+      if (apk) return apk.browser_download_url;
     }
   } catch (e) {
     console.warn('[download] could not resolve the latest APK', e);
