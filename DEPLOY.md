@@ -35,8 +35,10 @@ order to do them in.
 6. **در پنل Supabase**: اسکیمای `game` را در فهرست Exposed schemas اضافه کن،
    ورود ناشناس (Anonymous sign-ins) را روشن کن، و `MATCH_SECRET` را برای
    Edge Function ست کن — همان مقداری که به Cloudflare دادی (بخش ۶).
-7. **کلید anon سوپابیس** را در `packages/server/wrangler.toml` جای‌گزین
-   `set-me-or-the-leaderboard-returns-an-empty-array` کن و commit کن.
+7. **کلید anon سوپابیس** در `packages/server/wrangler.toml` از قبل ست شده
+   است. اگر پروژه‌ی سوپابیس دیگری داری، `SUPABASE_URL` و
+   `SUPABASE_ANON_KEY` را با مال خودت جای‌گزین کن. این کلید publishable است
+   و افشای آن اشکالی ندارد — چیزی که از داده محافظت می‌کند RLS است.
 
 بعد از این هفت کار، هر push روی شاخه‌ی `main` خودش بازی را دیپلوی می‌کند و
 یک APK امضاشده می‌سازد. برای انتشار نسخه، فقط یک تگ مثل `v1.0.0` بزن.

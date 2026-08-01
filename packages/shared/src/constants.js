@@ -34,7 +34,13 @@ export const T = {
   net: {
     interpDelay: 0.10,      // render remote entities 100ms in the past: smooth > instant
     maxExtrapolate: 0.25,
-    lagCompMax: 0.20,       // rewind window for hit registration
+    /* Reserved. Rewind-based hit registration is NOT implemented — nothing
+       reads this. It is left here as the declared budget for when it is,
+       because the number is a design decision (past 200ms you start killing
+       people who are already behind cover on their own screen) and that
+       decision is worth keeping even while the feature is missing.
+       Do not cite it as a shipped feature; the landing page used to. */
+    lagCompMax: 0.20,
     reconcileSnap: 3.0,     // metres of error past which we hard-snap instead of easing
     reconcileEase: 14,      // otherwise blend the correction in over ~70ms
     pingInterval: 2.0,

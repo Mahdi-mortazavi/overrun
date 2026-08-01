@@ -117,6 +117,27 @@ var h=document.documentElement;h.lang=l;h.dir=l==='fa'?'rtl':'ltr';})();
   --pad: clamp(18px, 5vw, 56px);
   --maxw: 1120px;
   --lh: 1.62;
+
+  /* --- Liquid Glass -----------------------------------------------------
+     Same material as the game's menu, same reasons. Applied only to the
+     floating chrome — the sticky bar, the platform cards, the download
+     callout — never to a paragraph of text, because translucency under body
+     copy is where legibility goes to die. */
+  --glass-fill:  rgba(19, 31, 42, .62);
+  --glass-blur:  20px;
+  --glass-spec:  rgba(255, 255, 255, .26);
+  --glass-edge:  rgba(0, 0, 0, .32);
+  --radius-glass: 18px;
+  --radius-control: 12px;
+  --ease-out: cubic-bezier(.16, 1, .3, 1);
+}
+
+/* One declaration point for both fallbacks, so no component has to remember. */
+@media (prefers-reduced-transparency: reduce) {
+  :root { --glass-fill: #16222E; --glass-blur: 0px; }
+}
+@media (prefers-contrast: more) {
+  :root { --glass-fill: #0C141D; --glass-blur: 0px; --steel: #C3D4DF; }
 }
 html[lang="fa"] { --ui: var(--fa); --lh: 1.9; }
 html[lang="en"] .plat .badge { font-family: var(--mono); }
@@ -193,9 +214,20 @@ section + section { border-block-start: 1px solid var(--line); }
 /* ------------------------------------------------------------------ chrome */
 header.bar {
   position: sticky; top: 0; z-index: 60;
-  background: rgba(14,22,32,.86);
-  backdrop-filter: blur(10px);
-  border-block-end: 1px solid var(--line);
+  background: var(--glass-fill);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  /* No 1px rule under floating chrome — a scroll-edge fade instead, and only
+     once there is actually content passing beneath it. */
+  box-shadow: inset 0 -1px 0 var(--glass-edge), inset 0 1px 0 var(--glass-spec);
+}
+header.bar::after {
+  content: ""; position: absolute; inset-inline: 0; top: 100%; height: 22px;
+  -webkit-backdrop-filter: blur(7px); backdrop-filter: blur(7px);
+  -webkit-mask-image: linear-gradient(to bottom, #000, transparent);
+  mask-image: linear-gradient(to bottom, #000, transparent);
+  opacity: var(--scrolled, 0); transition: opacity .22s var(--ease-out);
+  pointer-events: none;
 }
 .bar .wrap { display: flex; align-items: center; gap: 14px; padding-block: 10px; }
 .brand {
@@ -209,7 +241,7 @@ nav.links a { color: var(--steel); text-decoration: none; font-size: 13px; lette
 nav.links a:hover { color: var(--bone); }
 @media (min-width: 900px) { nav.links { display: flex; } }
 
-.langtoggle { display: flex; border: 1px solid var(--line); border-radius: 2px; overflow: hidden; }
+.langtoggle { display: flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; }
 .langtoggle button {
   font: inherit; font-size: 12px; letter-spacing: .1em;
   background: transparent; color: var(--steel); border: 0;
@@ -222,12 +254,16 @@ nav.links a:hover { color: var(--bone); }
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 10px;
   min-height: 50px; padding: 13px 26px;
-  border: 1px solid var(--line); border-radius: 2px;
+  border: 1px solid var(--line); border-radius: var(--radius-control);
   background: transparent; color: var(--bone);
   font: inherit; font-size: 15px; font-weight: 700; letter-spacing: .08em;
   text-decoration: none; cursor: pointer;
-  transition: background .14s ease, border-color .14s ease, color .14s ease;
+  transition: background .14s var(--ease-out), border-color .14s var(--ease-out),
+              color .14s var(--ease-out), transform .12s var(--ease-out);
+  touch-action: manipulation;
 }
+.btn:active { transform: scale(.972); }
+.btn:focus-visible { outline: 2px solid var(--amber); outline-offset: 3px; }
 html[lang="fa"] .btn { letter-spacing: 0; }
 .btn:hover { border-color: var(--steel); background: #ffffff0d; color: var(--bone); }
 .btn.primary { background: var(--amber); border-color: var(--amber); color: var(--ink); }
@@ -271,12 +307,17 @@ html[lang="fa"] .hook { max-width: 34ch; }
 @media (min-width: 760px) { .grid.g3 { grid-template-columns: repeat(3, 1fr); } }
 @media (min-width: 640px) { .grid.g2 { grid-template-columns: repeat(2, 1fr); } }
 
+/* Mode cards are content — they are read, not operated — so they get a solid
+   surface and a continuous corner, not glass. Rounding them to 3px was the
+   giveaway that this page predated the material system. */
 .card {
-  background: var(--panel);
+  background: linear-gradient(180deg, rgba(28,44,58,.94), rgba(19,31,42,.94));
   border: 1px solid var(--line);
-  border-radius: 3px;
+  border-radius: var(--radius-glass);
   padding: 22px 22px 24px;
   display: flex; flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 8px 26px rgba(0,0,0,.28);
 }
 .card .top { height: 3px; margin: -22px -22px 20px; }
 .card.coop  .top { background: var(--ice); }
@@ -309,7 +350,7 @@ html[dir="rtl"] .ask dt { text-align: right; }
 .weps { display: grid; gap: 12px; grid-template-columns: 1fr; }
 @media (min-width: 560px) { .weps { grid-template-columns: repeat(2, 1fr); } }
 @media (min-width: 860px) { .weps { grid-template-columns: repeat(3, 1fr); } }
-.wep { border: 1px solid var(--line); border-radius: 3px; padding: 14px 16px; background: #ffffff05; }
+.wep { border: 1px solid var(--line); border-radius: var(--radius-control); padding: 14px 16px; background: #ffffff05; }
 .wep b { display: block; font-family: var(--mono); direction: ltr; unicode-bidi: isolate; letter-spacing: .16em; font-size: 13px; color: var(--amber); margin-block-end: 5px; }
 html[dir="rtl"] .wep b { text-align: right; }
 .wep span { font-size: 14px; color: #CBD8E1; }
@@ -384,8 +425,17 @@ code.inline {
 
 /* ------------------------------------------------------------------- install */
 .plats { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); align-items: start; }
-.plat { border: 1px solid var(--line); border-radius: 3px; padding: 20px; background: var(--panel); }
-.plat.you { border-color: var(--amber); order: -1; background: #FFB53D0d; }
+/* The install cards ARE controls — each one ends in a download or an install
+   instruction — so these are the glass. */
+.plat {
+  border: 1px solid transparent; border-radius: var(--radius-glass); padding: 20px;
+  background: var(--glass-fill);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  box-shadow: inset 0 1px 0 var(--glass-spec), inset 0 0 0 .5px var(--glass-edge),
+              0 10px 30px rgba(0,0,0,.30);
+}
+.plat.you { order: -1; box-shadow: inset 0 1px 0 var(--glass-spec), inset 0 0 0 1px var(--amber), 0 10px 30px rgba(0,0,0,.30); }
 .plat h3 { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .plat .badge {
   display: none; font-size: 10px; letter-spacing: .18em;
@@ -471,7 +521,7 @@ footer p { margin: 0 0 10px; }
 
       <p data-fa="هیچ‌چیزش دانلود نشده. توی مخزن نه فایل مدلی هست، نه بافتی، نه صدایی: هندسه با کد نوشته می‌شود، بافت‌ها روی canvas کشیده می‌شوند، و چهل‌واندی صدا همان بار اولی که Play می‌زنی داخل بافر رندر می‌شوند. ده آرکتایپ دشمن روی یک هسته‌ی هوش مصنوعی مشترک می‌چرخند، و یک دایرکتور هر موج را بر اساس چیزی که تیمت واقعاً ساخته می‌چیند — نه از روی فهرستی که از قبل نوشته شده باشد.">Nothing in it was downloaded. There are no model files, no texture files and no audio files in the repository: geometry is written, textures are drawn onto a canvas, and forty-odd sounds are rendered into buffers the first time you press play. Ten enemy archetypes run on one AI core, and a director composes each wave against what your party has actually built rather than replaying an authored list.</p>
 
-      <p data-fa="در آنلاین، خودِ مسابقه روی edge اجرا می‌شود. یک Durable Object روی کلادفلر همان شبیه‌سازی را بیست بار در ثانیه تیک می‌زند و حقیقت دستِ اوست؛ مرورگر تو جلوتر از آن پیش‌بینی می‌کند و بعد اصلاح می‌شود. کلاینت هیچ‌وقت به سرور نمی‌گوید «زدمش» — فقط می‌گوید کجا را نشانه رفته بود، و سرور تصمیم می‌گیرد، و تا ۲۰۰ میلی‌ثانیه عقب برمی‌گردد تا پینگت به ضررت تمام نشود.">Online, the match itself runs on the edge. A Cloudflare Durable Object ticks the same simulation twenty times a second and owns the truth; your browser predicts ahead of it and gets corrected. The client never tells the server that it hit something — it says where it was aiming, the server decides, and it rewinds up to 200 ms so your ping is not held against you.</p>
+      <p data-fa="در آنلاین، خودِ مسابقه روی edge اجرا می‌شود. یک Durable Object روی کلادفلر همان شبیه‌سازی را بیست بار در ثانیه تیک می‌زند و حقیقت دستِ اوست؛ مرورگر تو جلوتر از آن پیش‌بینی می‌کند و بعد اصلاح می‌شود. کلاینت هیچ‌وقت به سرور نمی‌گوید «زدمش» — فقط می‌گوید کجا را نشانه رفته بود، و سرور تصمیم می‌گیرد. یعنی هیچ‌کس نمی‌تواند برد را به مرورگرش تحمیل کند.">Online, the match itself runs on the edge. A Cloudflare Durable Object ticks the same simulation twenty times a second and owns the truth; your browser predicts ahead of it and gets corrected. The client never tells the server that it hit something — it says where it was aiming, the server decides. Which means nobody can talk their browser into a hit they did not earn.</p>
 
       <h3 data-fa="ده آرکتایپ، ده سؤال">Ten archetypes, ten questions</h3>
       <p class="small muted" data-fa="هر دشمن برای این ساخته شده که یک سؤال متفاوت از تو بپرسد. سختی از تصمیم بهتر می‌آید، نه از تقلب: هر حمله دست‌کم ۲۵۰ میلی‌ثانیه تلگراف می‌دهد و هیچ‌چیز کنار شانه‌ات اسپاون نمی‌شود.">Every one of them exists to ask a different question of the player. Difficulty comes from better decisions, never from cheating: every attack telegraphs for at least 250 ms, and nothing spawns inside your shoulder.</p>
@@ -678,7 +728,7 @@ footer p { margin: 0 0 10px; }
       <p data-fa="چهار سطح کیفیت — low، med، high، ultra — از روی زمان فریمِ واقعی انتخاب می‌شوند، نه از روی sniff کردن user agent، و مدام دوباره ارزیابی می‌شوند. اول رزولوشن و پس‌پردازش کوتاه می‌آیند: نسبت پیکسل از ۲٫۰ تا ۱٫۰ و شدو مپ از ۴۰۹۶ تا ۵۱۲ پایین می‌آید. تعداد دشمن‌ها هیچ‌وقت تغییر نمی‌کند، چون آن کار خودِ بازی را عوض می‌کند، نه نمایشش را.">Four quality tiers — low, med, high, ultra — are chosen from a real frame-time measurement rather than by sniffing the user agent, and re-evaluated continuously. Resolution and post-processing go first: pixel ratio falls from 2.0 to 1.0, shadow maps from 4096 to 512. The enemy count never changes, because that would alter the game rather than its presentation.</p>
 
       <h3 data-fa="سرور معتبر روی edge">An authoritative server on the edge</h3>
-      <p data-fa="هر مسابقه یک Durable Object است: یک پروسه‌ی تک، در نزدیک‌ترین نقطه به بازیکن‌ها، که دقیقاً همان شبیه‌سازی مرورگر را ۲۰ بار در ثانیه اجرا می‌کند. مرورگر تو حرکت خودت را پیش‌بینی می‌کند و اسنپ‌شات‌های سرور آن را اصلاح می‌کنند؛ بقیه‌ی بازیکن‌ها ۱۰۰ میلی‌ثانیه در گذشته رندر می‌شوند، چون نرم‌بودن از فوری‌بودن مهم‌تر است. ثبت برخورد سروری است و تا ۲۰۰ میلی‌ثانیه عقب برمی‌گردد. کلاینت هیچ‌وقت نمی‌گوید که چیزی را زده است.">Every match is a Durable Object: a single process, as close to the players as Cloudflare can put it, running exactly the browser's simulation 20 times a second. Your browser predicts your own movement and the server's snapshots correct it; everyone else is rendered 100 ms in the past, because smooth beats instant. Hit registration is server-side and rewinds up to 200 ms. The client never claims a hit.</p>
+      <p data-fa="هر مسابقه یک Durable Object است: یک پروسه‌ی تک، در نزدیک‌ترین نقطه به بازیکن‌ها، که دقیقاً همان شبیه‌سازی مرورگر را ۲۰ بار در ثانیه اجرا می‌کند. مرورگر تو حرکت خودت را پیش‌بینی می‌کند و اسنپ‌شات‌های سرور آن را اصلاح می‌کنند؛ بقیه‌ی بازیکن‌ها ۱۰۰ میلی‌ثانیه در گذشته رندر می‌شوند، چون نرم‌بودن از فوری‌بودن مهم‌تر است. ثبت برخورد سروری است. کلاینت هیچ‌وقت نمی‌گوید که چیزی را زده است.">Every match is a Durable Object: a single process, as close to the players as Cloudflare can put it, running exactly the browser's simulation 20 times a second. Your browser predicts your own movement and the server's snapshots correct it; everyone else is rendered 100 ms in the past, because smooth beats instant. Hit registration is server-side. The client never claims a hit.</p>
 
       <h3 data-fa="و بعد آفلاین کار می‌کند">And then it works offline</h3>
       <p data-fa="سرویس ورکر موقع نصب همه‌ی خروجی‌های بیلد را یک‌جا پیش‌کش می‌کند، پس کل بازی تک‌نفره با شبکه‌ی قطع اجرا می‌شود. نام کش هش بیلد را با خود دارد، پس فعال‌شدن نسخه‌ی جدید همه‌ی نسخه‌های قبلی را در یک حرکت پاک می‌کند. توی تونل و آسانسور، یک ران تمام نمی‌شود.">The service worker precaches every build artefact at install, atomically, so the whole single-player game runs with the network cut. The cache name carries the build hash, so activating a new version drops every previous one in a single sweep. A tunnel or a lift does not end a run.</p>
@@ -792,6 +842,26 @@ footer p { margin: 0 0 10px; }
 </div>
 
 <script>
+/* ========================= SCROLL EDGE ==============================
+   The floating bar gets a progressive blur fade beneath it, but only once
+   there is content actually passing under it. A permanent 1px rule under
+   floating chrome is the thing this replaces: it draws a hard line where the
+   material should simply be catching what is behind it.
+
+   Driven by an IntersectionObserver on a sentinel rather than a scroll
+   listener — no work at all on the main thread while the page is still. */
+(function () {
+  var bar = document.querySelector('header.bar');
+  if (!bar || !('IntersectionObserver' in window)) return;
+  var probe = document.createElement('div');
+  probe.setAttribute('aria-hidden', 'true');
+  probe.style.cssText = 'position:absolute;top:0;left:0;width:1px;height:1px;pointer-events:none';
+  document.body.prepend(probe);
+  new IntersectionObserver(function (entries) {
+    bar.style.setProperty('--scrolled', entries[0].isIntersecting ? '0' : '1');
+  }, { rootMargin: '0px' }).observe(probe);
+})();
+
 /* ============================ LANGUAGE ==============================
    Both languages live in one document. English is the markup; Persian
    rides along in data-fa attributes and is swapped in. The English

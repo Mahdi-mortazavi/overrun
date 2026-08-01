@@ -26,9 +26,14 @@
      • velocities — 8 bits over ±50 m/s, used only to smooth interpolation
      • health     — a percentage byte for enemies, a raw byte for players
 
-   Net result is ~1.1 kB per snapshot for a full 8-player match with sixty
-   enemies on screen, or about 90 kbit/s down at a 20Hz tick. Enemies are
-   sent at half rate and interpolated, which takes it under 60 kbit/s.       */
+   Measured by tools/simtest.mjs: 281 B for a solo co-op snapshot, 1,173 B
+   for a full 8-player team deathmatch. At the 20Hz tick that is roughly
+   45–190 kbit/s down depending on how busy the arena is.
+
+   Enemies go out every tick. It is tempting to halve their rate and
+   interpolate — see the note in MatchRoom.js for why that is wrong here:
+   they change direction far too abruptly to survive being guessed at.
+   Projectiles are the ones that get thinned, and only during a storm.       */
 
 const POS_SCALE = 400;        // 16-bit signed / 400 = ±81.9m
 const VEL_SCALE = 2.5;        // 8-bit signed / 2.5 = ±50 m/s
@@ -110,7 +115,7 @@ const clampi = (v, a, b) => (v < a ? a : v > b ? b : v);
 
 /* ------------------------------------------------------------------ INPUT */
 
-/** 9 bytes per input frame, 30 per second: 270 B/s up. Nothing to optimise. */
+/** 8 bytes per input frame, 30 per second: 240 B/s up. Nothing to optimise. */
 export function encodeInput(seq, i) {
   const w = new Writer(16);
   w.u8(MSG.INPUT);
