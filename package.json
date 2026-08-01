@@ -1,7 +1,7 @@
 {
   "name": "overrun",
-  "private": true,
   "version": "1.0.0",
+  "private": true,
   "type": "module",
   "workspaces": [
     "packages/*"
@@ -17,5 +17,9 @@
   },
   "license": "Apache-2.0",
   "author": "Mohammad Mahdi Mortazavi",
-  "description": "A browser arena shooter that installs like an app, plays offline, and takes eight people online."
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Mahdi-mortazavi/overrun.git"
+  },
+  "homepage": "https://github.com/Mahdi-mortazavi/overrun"
 }
