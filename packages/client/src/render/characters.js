@@ -391,24 +391,79 @@ export function buildWeapon(kind = 'smg') {
   const light = new THREE.MeshStandardMaterial({ color: 0x5B6C78, roughness: 0.5, metalness: 0.6 });
   const hot = new THREE.MeshStandardMaterial({ color: 0x22292F, roughness: 0.35, metalness: 0.8, emissive: 0xFFB53D, emissiveIntensity: 0.5 });
 
-  const profiles = {
-    smg: [[0.09, 0.11, 0.62, dark, 0, 0, 0.24], [0.05, 0.05, 0.30, light, 0, 0, 0.62], [0.07, 0.16, 0.10, dark, 0, -0.10, 0.06]],
-    shotgun: [[0.11, 0.13, 0.80, dark, 0, 0, 0.32], [0.07, 0.07, 0.34, light, 0, -0.02, 0.76], [0.08, 0.18, 0.12, dark, 0, -0.11, 0.06]],
-    rail: [[0.09, 0.10, 1.10, dark, 0, 0, 0.46], [0.05, 0.05, 0.36, hot, 0, 0.06, 0.92], [0.07, 0.17, 0.11, dark, 0, -0.10, 0.06]],
-    arc: [[0.10, 0.12, 0.66, light, 0, 0, 0.26], [0.13, 0.13, 0.14, hot, 0, 0.02, 0.62], [0.07, 0.16, 0.10, dark, 0, -0.10, 0.06]],
-    beam: [[0.11, 0.13, 0.58, dark, 0, 0, 0.24], [0.09, 0.09, 0.26, hot, 0, 0, 0.62], [0.07, 0.16, 0.10, dark, 0, -0.10, 0.06]],
-    launcher: [[0.14, 0.15, 0.72, light, 0, 0.02, 0.30], [0.11, 0.11, 0.22, dark, 0, 0.02, 0.72], [0.07, 0.17, 0.11, dark, 0, -0.11, 0.06]]
-  };
-  for (const [w, h, d, mat, x, y, z] of (profiles[kind] || profiles.smg)) {
+  /* Silhouettes are designed for the camera that actually exists.
+
+     The rig looks down at roughly 56 degrees from 26 metres. From up there a
+     weapon is a shape on the ground plane, and its side profile — where all
+     the character of a gun normally lives — is almost entirely edge-on and
+     invisible. Six weapons built as three stacked boxes with different
+     proportions therefore all read as the same short grey smudge, which is
+     exactly what they were.
+
+     So each weapon gets one element that is distinctive in PLAN view: a drum
+     that sticks out sideways, a pair of rails, a fat cylinder, a hoop. Cheap
+     geometry, but you can tell what you are holding at a glance, and that is
+     the entire job. */
+  const box = (w, h, d, mat, x, y, z) => {
     const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
     m.position.set(x, y, z);
-    m.castShadow = true;
-    g.add(m);
+    return m;
+  };
+  const cyl = (r, len, mat, x, y, z, axis = 'z') => {
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, len, 10), mat);
+    if (axis === 'z') m.rotation.x = Math.PI / 2;
+    if (axis === 'x') m.rotation.z = Math.PI / 2;
+    m.position.set(x, y, z);
+    return m;
+  };
+
+  const parts = [];
+  // Every weapon shares a receiver and a grip, so the hand always looks right.
+  parts.push(box(0.09, 0.11, 0.46, dark, 0, 0, 0.18));
+  parts.push(box(0.07, 0.16, 0.10, dark, 0, -0.10, 0.04));
+
+  if (kind === 'shotgun') {
+    // Drum magazine, offset sideways — the one shape unmistakable from above.
+    parts.push(cyl(0.15, 0.09, light, 0.10, 0, 0.20, 'x'));
+    parts.push(cyl(0.055, 0.46, dark, 0, 0, 0.62));
+    parts.push(box(0.12, 0.04, 0.30, light, 0, 0.06, 0.52));
+  } else if (kind === 'rail') {
+    // Two long parallel rails with the gap between them lit: reads as a line.
+    parts.push(box(0.028, 0.05, 0.86, light, -0.052, 0.02, 0.62));
+    parts.push(box(0.028, 0.05, 0.86, light, 0.052, 0.02, 0.62));
+    parts.push(box(0.055, 0.035, 0.80, hot, 0, 0.02, 0.60));
+    parts.push(cyl(0.10, 0.07, dark, 0, 0, 0.26, 'x'));
+  } else if (kind === 'arc') {
+    // An open hoop at the muzzle. A ring in plan view is unlike anything else.
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.13, 0.028, 7, 16), hot);
+    ring.position.set(0, 0.01, 0.60);
+    parts.push(ring);
+    parts.push(cyl(0.04, 0.34, light, 0, 0, 0.44));
+  } else if (kind === 'beam') {
+    // Fat emitter with two cooling fins fanned out to either side.
+    parts.push(cyl(0.085, 0.36, light, 0, 0, 0.52));
+    parts.push(box(0.20, 0.02, 0.16, dark, 0, 0.05, 0.40));
+    parts.push(cyl(0.055, 0.10, hot, 0, 0, 0.72));
+  } else if (kind === 'launcher') {
+    // Wide tube, visibly the biggest footprint of the six.
+    parts.push(cyl(0.125, 0.62, light, 0, 0.02, 0.44));
+    parts.push(cyl(0.135, 0.06, dark, 0, 0.02, 0.72));
+    parts.push(box(0.05, 0.13, 0.16, dark, 0, 0.12, 0.26));
+  } else {
+    // SMG: compact, with a magazine forward of the grip and a stubby barrel.
+    parts.push(cyl(0.035, 0.34, light, 0, 0, 0.52));
+    parts.push(box(0.055, 0.20, 0.09, light, 0, -0.11, 0.22));
+    parts.push(box(0.10, 0.03, 0.22, dark, 0, 0.06, 0.24));
   }
+
+  for (const m of parts) { m.castShadow = true; g.add(m); }
 
   // Muzzle marker: everything that needs to spawn at the barrel reads this.
   const muzzle = new THREE.Object3D();
-  const len = kind === 'rail' ? 1.14 : kind === 'shotgun' ? 0.95 : 0.78;
+  // Matched to where each barrel above actually ends, so the flash and the
+  // tracer leave the weapon rather than the middle of it.
+  const MUZZLE = { smg: 0.70, shotgun: 0.86, rail: 1.06, arc: 0.74, beam: 0.78, launcher: 0.76 };
+  const len = MUZZLE[kind] ?? 0.70;
   muzzle.position.set(0, 0, len);
   g.add(muzzle);
   g.userData.muzzle = muzzle;

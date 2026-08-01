@@ -165,7 +165,18 @@ class App {
     this.ui.boot(1, 'READY');
     await sleep(180);
     this.ui.bootDone();
-    this.state = 'title';
+
+    /* Only claim the title screen if nothing has happened yet.
+
+       The menu is built and clickable well before this line — the mode grid
+       exists as soon as the UI is wired, and there is an unconditional 180ms
+       sleep immediately above. Someone who taps SOLO inside that window gets
+       a match that is fully constructed by beginMatch() and then silently
+       demoted back to 'title' here, so the loop below starts and steps
+       nothing. The button appears dead and a second tap fixes it, which is
+       the worst possible shape for a bug: intermittent, fast-machine-only,
+       and invisible to anyone who clicks slowly. */
+    if (this.state === 'boot') this.state = 'title';
 
     this.checkOrientation();
     addEventListener('resize', () => { this.stage.resize(); this.checkOrientation(); });
@@ -1510,7 +1521,10 @@ app.boot().catch(err => {
 });
 
 // Service worker: registered late so it never competes with the first frame.
-if ('serviceWorker' in navigator && location.protocol === 'https:') {
+// Secure contexts only, which includes localhost — the old check was https
+// alone, so the service worker never registered during local development and
+// the offline path could not be tested without deploying it.
+if ('serviceWorker' in navigator && window.isSecureContext) {
   addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js').catch(() => {});
   });
