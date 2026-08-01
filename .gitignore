@@ -42,3 +42,7 @@ packages/android/android/gradle/wrapper/gradle-wrapper.jar
 
 # Chat delivery scratch
 deliver/
+
+# Screenshot written by tools/livecheck.mjs on every run. Evidence that a
+# build was playable, not part of the build.
+live-play.png
