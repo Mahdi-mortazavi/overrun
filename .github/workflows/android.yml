@@ -66,12 +66,15 @@ jobs:
         working-directory: packages/android/android
         run: |
           if [ ! -f gradle/wrapper/gradle-wrapper.jar ]; then
-            VER=$(sed -n 's/.*gradle-\([0-9.]*\)-bin\.zip/\1/p' gradle/wrapper/gradle-wrapper.properties)
+            VER=$(sed -n 's#.*/gradle-\([0-9][0-9.]*\)-\(bin\|all\)\.zip.*#\1#p' gradle/wrapper/gradle-wrapper.properties)
+            test -n "$VER" || { echo "::error::could not read the Gradle version out of gradle-wrapper.properties"; exit 1; }
             echo "fetching wrapper jar for Gradle $VER"
             curl -fsSL -o gradle/wrapper/gradle-wrapper.jar \
               "https://raw.githubusercontent.com/gradle/gradle/v${VER}/gradle/wrapper/gradle-wrapper.jar"
           fi
           test -s gradle/wrapper/gradle-wrapper.jar
+          unzip -l gradle/wrapper/gradle-wrapper.jar | grep -q GradleWrapperMain \
+            || { echo "::error::the file fetched is not a Gradle wrapper jar"; exit 1; }
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3

@@ -29,12 +29,13 @@ SECRETS.local.md
 release.keystore
 KEYSTORE_BASE64.txt
 
-# Icons and screenshots ARE committed: the production build must not depend on
-# Python and Pillow existing in the build container, and a manifest pointing at
+# Icons and screenshots ARE committed — including the Android launcher and
+# splash densities below. The production build must not depend on Python and
+# Pillow existing in the build container, aapt fails outright on a manifest
+# that references a missing @mipmap/ic_launcher, and a web manifest pointing at
 # icons that were never generated makes the PWA uninstallable.
-# tools/gen-icons.py remains the source of truth for regenerating them.
-packages/android/android/app/src/main/res/mipmap-*/
-packages/android/android/app/src/main/res/drawable-*/
+# tools/gen-icons.py and packages/android/scripts/gen-android-assets.py remain
+# the source of truth for regenerating them.
 
 # Fetched by CI; see .github/workflows/android.yml
 packages/android/android/gradle/wrapper/gradle-wrapper.jar
