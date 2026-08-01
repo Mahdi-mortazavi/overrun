@@ -736,6 +736,7 @@ footer p { margin: 0 0 10px; }
           <li data-fa="یا همین سایت را در کروم باز کن، منوی ⋮ و بعد «نصب برنامه» را بزن. همان بازی است، بدون مرحله‌ی نصب.">Or open this site in Chrome, tap ⋮ and then Install app. Same game, no install step.</li>
         </ol>
         <a class="btn primary" href="/download/overrun.apk" data-fa="دانلود APK">DOWNLOAD APK</a>
+        <p class="muted small" data-fa="این بیلد با کلید موقتِ CI امضا شده و در Releases به‌صورت pre-release منتشر می‌شود. نصب می‌شود و کامل بازی می‌کند؛ فقط وقتی نسخه‌ی امضاشده‌ی نهایی برسد باید اول این را حذف کنی، چون اندروید به‌روزرسانی با کلید متفاوت را قبول نمی‌کند.">This build is signed with a throwaway CI key and published as a pre-release. It installs and plays in full; the only catch is that when the properly signed build arrives you will have to uninstall this one first, because Android refuses an update signed with a different key.</p>
       </div>
 
       <div class="plat" data-plat="ios">
