@@ -57,6 +57,43 @@ export class UI {
 
     this._buildLadder();
     this._buildIndicators();
+    this._bindPressFeedback();
+  }
+
+  /* Press feedback on pointer-DOWN, delegated at the document.
+
+     :active is not good enough on touch: the browser withholds it until it has
+     decided the touch is not the start of a scroll, which is a visible chunk
+     of dead time on exactly the interaction that most needs to feel immediate.
+     Pointerdown fires on contact. Delegation means every control gets it,
+     including the mode rows and upgrade cards built at runtime, without a
+     single call site having to remember.
+
+     `.pressed` only ever drives transform and background, both of which are
+     compositor-only, so this cannot cost a frame. */
+  _bindPressFeedback() {
+    const SEL = '.btn, .mode, .card, .tapzone, .pad';
+    let held = null;
+    const release = () => {
+      if (held) { held.classList.remove('pressed'); held = null; }
+    };
+    document.addEventListener('pointerdown', e => {
+      const t = e.target.closest ? e.target.closest(SEL) : null;
+      if (!t || t.hasAttribute('disabled')) return;
+      release();
+      held = t;
+      t.classList.add('pressed');
+    }, { passive: true });
+    for (const ev of ['pointerup', 'pointercancel', 'pointerleave', 'blur']) {
+      document.addEventListener(ev, release, { passive: true });
+    }
+    // A pointer that slides off the control it started on should let go of it,
+    // the same way a native button does.
+    document.addEventListener('pointermove', e => {
+      if (!held) return;
+      const over = e.target.closest ? e.target.closest(SEL) : null;
+      if (over !== held) release();
+    }, { passive: true });
   }
 
   _buildLadder() {

@@ -29,6 +29,82 @@
   --safe-b: env(safe-area-inset-bottom, 0px);
   --safe-l: env(safe-area-inset-left, 0px);
   --safe-r: env(safe-area-inset-right, 0px);
+
+  /* ===================== DESIGN SYSTEM — MENU LAYER =====================
+
+     Everything below governs the surfaces you are NOT playing on: boot, menu,
+     settings, upgrade choice, summary. The HUD above deliberately does not use
+     any of it. Glass on a HUD is a mistake twice over — it costs frames on the
+     one screen that cannot afford them, and it puts a blur between the player
+     and the health bar at exactly the moment the health bar matters. Apple's
+     own rule is the same one: glass is the floating chrome, never the content.
+
+     Here the rule works in our favour, because behind these panels is a live
+     3D arena. That is real content for the material to lens, which is the
+     condition under which glass earns its cost instead of being decoration. */
+
+  /* Labels — four weights of presence, vibrant rather than flat grey, because
+     mid-grey text on translucency is where legibility goes to die. */
+  --label-1: rgba(255, 255, 255, .96);
+  --label-2: rgba(226, 238, 246, .68);
+  --label-3: rgba(226, 238, 246, .40);
+  --label-4: rgba(226, 238, 246, .20);
+
+  /* Surfaces and fills */
+  --surface: #0E1620;
+  --surface-2: #16222E;
+  --fill-1: rgba(160, 190, 210, .10);
+  --fill-2: rgba(160, 190, 210, .16);
+  --separator: rgba(190, 215, 230, .16);
+  --separator-strong: rgba(190, 215, 230, .38);
+
+  /* One accent for interactive things. Rose stays reserved for danger, so it
+     is never a tint — that rule predates this redesign and outranks it. */
+  --tint: var(--amber);
+  --tint-fill: rgba(255, 181, 61, .14);
+  --tint-fill-2: rgba(255, 181, 61, .26);
+
+  /* Glass. Two thicknesses: bigger surfaces read as thicker material. */
+  --glass-blur: 22px;
+  --glass-blur-lg: 38px;
+  --glass-fill: rgba(18, 30, 41, .58);
+  --glass-fill-lg: rgba(14, 22, 32, .66);
+  --glass-specular: rgba(255, 255, 255, .30);
+  --glass-edge: rgba(0, 0, 0, .34);
+
+  /* Shape — concentric: a nested radius is the parent's minus its padding. */
+  --radius-control: 12px;
+  --radius-card: 20px;
+  --radius-glass: 26px;
+  --radius-sheet: 32px;
+
+  /* Motion. Springs live in JS; these are for non-gestural state only. */
+  --press-scale: .972;
+  --ease-out: cubic-bezier(.16, 1, .3, 1);
+  --dur-fast: .13s;
+  --dur-base: .28s;
+}
+
+/* Reduced transparency: swap the material for the solid it falls back to.
+   Declared once, here, so no component has to remember to handle it. */
+@media (prefers-reduced-transparency: reduce) {
+  :root {
+    --glass-fill: #131F2B;
+    --glass-fill-lg: #101A24;
+    --glass-blur: 0px;
+    --glass-blur-lg: 0px;
+  }
+}
+@media (prefers-contrast: more) {
+  :root {
+    --glass-fill: #0C141D;
+    --glass-fill-lg: #0A1119;
+    --glass-blur: 0px;
+    --glass-blur-lg: 0px;
+    --label-2: rgba(240, 248, 252, .88);
+    --label-3: rgba(240, 248, 252, .66);
+    --separator: var(--separator-strong);
+  }
 }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -222,69 +298,220 @@ canvas#gl { display: block; position: fixed; inset: 0; width: 100%; height: 100%
 #respawnNotice b { color: var(--bone); font-size: 22px; }
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .42; } }
 
-/* =============================== PANELS ================================ */
+/* =============================== PANELS ================================
+
+   A panel is two things: a scrim that pushes the arena back, and a floating
+   glass surface holding the controls. The arena keeps rendering behind both,
+   which is the whole reason the material is worth its cost here. */
+
 .panel {
   position: fixed; inset: 0; z-index: 6; display: none; place-items: center;
-  background: radial-gradient(ellipse at 50% 36%, #17242Fee, #0E1620fa);
+  /* Scrim only. The panel itself is never the glass — its child is. Making
+     the full-viewport layer glass would blur the entire arena at full-screen
+     size, which is the single most expensive thing you can ask a GPU to do
+     and looks worse than the scrim it replaces. */
+  background:
+    radial-gradient(ellipse at 50% 38%, rgba(23, 36, 47, .62), rgba(8, 13, 19, .90));
   padding: calc(18px + var(--safe-t)) 18px calc(18px + var(--safe-b));
   overflow-y: auto; -webkit-overflow-scrolling: touch;
+  opacity: 0;
+  transition: opacity var(--dur-base) var(--ease-out);
 }
-.panel.show { display: grid; }
-.panel .inner { width: min(820px, 94vw); text-align: center; }
+.panel.show { display: grid; opacity: 1; }
+.panel .inner { width: min(880px, 94vw); text-align: center; }
 
-.logo { margin-bottom: 26px; }
+/* --------------------------------------------------------------- glass --
+   One recipe, two thicknesses. Back to front: lensed backdrop, fill,
+   darkened edge for separation, specular top edge, outer shadow. */
+.glass, .glass-lg {
+  position: relative;
+  border-radius: var(--radius-glass);
+  background: var(--glass-fill);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  box-shadow:
+    inset 0 1px 0 var(--glass-specular),
+    inset 0 0 0 .5px var(--glass-edge),
+    0 10px 34px rgba(0, 0, 0, .34);
+  /* Its own compositor layer: the blur must not be re-rasterised by whatever
+     the arena is doing underneath it. */
+  isolation: isolate;
+}
+.glass-lg {
+  border-radius: var(--radius-sheet);
+  background: var(--glass-fill-lg);
+  -webkit-backdrop-filter: blur(var(--glass-blur-lg)) saturate(180%);
+  backdrop-filter: blur(var(--glass-blur-lg)) saturate(180%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .34),
+    inset 0 0 0 .5px var(--glass-edge),
+    0 20px 60px rgba(0, 0, 0, .44);
+}
+
+/* The sheet is the floating control surface every panel hangs its body on.
+   Padding is the concentricity budget: children round to the sheet's radius
+   minus this. */
+.sheet { padding: 22px; margin: 0 auto; max-width: 660px; }
+.sheet > .lbl:first-child { margin-bottom: 16px; }
+.sheet-foot {
+  display: flex; gap: 8px; justify-content: center; flex-wrap: wrap;
+  margin-top: 14px; padding-top: 16px;
+  box-shadow: inset 0 1px 0 var(--separator);
+}
+.sheet-foot .btn { margin-top: 0; }
+#upgradeScreen .sheet, #deathScreen .sheet { max-width: 820px; }
+
+.logo { margin-bottom: clamp(12px, 3vh, 26px); }
 h1 {
-  font-size: clamp(38px, 11vw, 92px); letter-spacing: .16em; margin: 0; font-weight: 800;
+  /* Sized against the SHORTER axis as well as the wider one. The game plays
+     in landscape on a phone — 844×390 is a real viewport — and a wordmark
+     scaled on vw alone hit 92px there and pushed the whole console off the
+     bottom of the screen. Height has to be in the constraint. */
+  font-size: clamp(30px, min(11vw, 13vh), 92px);
+  letter-spacing: .16em; margin: 0; font-weight: 800; line-height: 1.05;
   background: linear-gradient(180deg, var(--bone), var(--steel));
   -webkit-background-clip: text; background-clip: text; color: transparent;
 }
-.tag { font-size: 11px; letter-spacing: .3em; color: var(--amber); margin-top: 10px; }
-.hint { font-size: 11px; letter-spacing: .13em; color: var(--steel); margin-top: 18px; line-height: 1.9; }
+.tag { font-size: 11px; letter-spacing: .3em; color: var(--tint); margin-top: 10px; }
+.hint { font-size: 11px; letter-spacing: .13em; color: var(--label-2); margin-top: 18px; line-height: 1.9; }
 .err { font-size: 11px; letter-spacing: .12em; color: var(--rose); min-height: 16px; margin-top: 10px; }
 
+/* -------------------------------------------------------------- buttons --
+   Press feedback is a scale on pointer-down, not a nudge on :active, because
+   :active on touch does not fire until the browser has decided it is not a
+   scroll — which is exactly the 100ms of dead feel we are trying to remove.
+   ui.js sets .pressed on pointerdown. */
 .btn {
-  display: inline-block; margin: 14px 6px 0; padding: 14px 30px; border: 1px solid var(--amber);
-  color: var(--amber); font-size: 13px; letter-spacing: .26em; text-transform: uppercase;
-  cursor: pointer; background: #FFB53D12; transition: background .12s, transform .08s;
+  display: inline-block; margin: 12px 6px 0;
+  padding: 15px 30px; min-height: 44px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  color: var(--tint); font-size: 13px; letter-spacing: .24em; text-transform: uppercase;
+  cursor: pointer;
+  background: var(--tint-fill);
+  box-shadow: inset 0 0 0 1px rgba(255, 181, 61, .38);
+  transition: background var(--dur-fast) var(--ease-out),
+              transform var(--dur-fast) var(--ease-out),
+              box-shadow var(--dur-fast) var(--ease-out);
+  touch-action: manipulation;
 }
-.btn:active { background: #FFB53D2e; transform: translateY(1px); }
-.btn.ghost { border-color: #ffffff26; color: var(--steel); font-size: 11px; padding: 11px 20px; letter-spacing: .17em; }
-.btn.sm { padding: 8px 14px; font-size: 10px; }
+.btn.pressed { background: var(--tint-fill-2); transform: scale(var(--press-scale)); }
+.btn.ghost {
+  color: var(--label-2); font-size: 11px; padding: 13px 20px; letter-spacing: .17em;
+  background: var(--fill-1);
+  box-shadow: inset 0 0 0 1px var(--separator);
+}
+.btn.ghost.pressed { background: var(--fill-2); }
+.btn.sm { padding: 11px 16px; min-height: 44px; font-size: 10px; }
 .btn.wide { display: block; width: 100%; }
 .btn[disabled] { opacity: .35; pointer-events: none; }
+.btn:focus-visible { outline: 2px solid var(--tint); outline-offset: 3px; }
 .row-center { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-top: 10px; }
 
-/* ----------------------------------------------------------- mode cards */
-.modegrid { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
-.mode {
-  flex: 1 1 210px; max-width: 250px; padding: 20px 16px; cursor: pointer; text-align: left;
-  background: #17242Fd0; border: 1px solid #ffffff1a; border-top: 3px solid var(--steel);
-  transition: transform .1s, border-color .15s, background .15s;
+/* ----------------------------------------------------------- mode cards --
+   One glass console, three segments inside it — not three separate glass
+   cards. Nesting or tiling glass is explicitly wrong (redundant lensing, and
+   three composited blur layers where one will do), and a single surface also
+   reads as one decision rather than nine scattered buttons. */
+.modegrid {
+  display: flex; flex-direction: column; gap: 0;
+  padding: 6px;
+  margin: 0 auto;
+  max-width: 620px;
+  text-align: left;
 }
-.mode:active { transform: translateY(2px); }
-.mode.pvp { border-top-color: var(--rose); }
-.mode.coop { border-top-color: var(--ice); }
-.mode .mn { font-size: 15px; letter-spacing: .2em; margin-bottom: 6px; }
-.mode .md { font-size: 11px; color: var(--steel); line-height: 1.6; min-height: 34px; }
-.mode .mm { font-size: 9px; letter-spacing: .18em; color: var(--amber); margin-top: 10px; }
-.mode .mrow { display: flex; gap: 6px; margin-top: 12px; }
-.mode .mrow .btn { margin: 0; flex: 1; padding: 9px 6px; font-size: 10px; letter-spacing: .12em; text-align: center; }
+.mode {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas: 'name actions' 'desc actions';
+  gap: 2px 14px;
+  align-items: center;
+  padding: 16px 16px;
+  cursor: pointer;
+  /* Concentric: the console's radius minus its padding. */
+  border-radius: calc(var(--radius-sheet) - 6px);
+  transition: background var(--dur-fast) var(--ease-out),
+              transform var(--dur-fast) var(--ease-out);
+}
+/* Separator as an inset pseudo-element, not an inset box-shadow. A shadow
+   follows the row's own corner radius, which turned every divider into a
+   pair of little hooks curling away from the edges. This is a straight line
+   that stops short of the rail and the padding, the way a table separator
+   in a settings list does. */
+.mode + .mode::after {
+  content: ''; position: absolute; left: 6px; right: 6px; top: 0; height: 1px;
+  background: var(--separator);
+}
+.mode.pressed { background: var(--fill-1); transform: scale(.99); }
+.mode:focus-visible { outline: 2px solid var(--tint); outline-offset: -2px; }
+/* The accent is a rail, not a top border: it survives the rounded corners
+   and it points at the row it belongs to. */
+.mode::before {
+  content: ''; position: absolute; left: 6px; top: 18px; bottom: 18px; width: 3px;
+  border-radius: 3px; background: var(--steel);
+}
+.mode.pvp::before { background: var(--rose); }
+.mode.coop::before { background: var(--ice); }
+.mode .mn { grid-area: name; font-size: 15px; letter-spacing: .2em; color: var(--label-1); padding-left: 14px; }
+.mode .md { grid-area: desc; font-size: 11.5px; color: var(--label-2); line-height: 1.55; padding-left: 14px; }
+.mode .mm { display: none; }
+.mode .mrow { grid-area: actions; display: flex; gap: 6px; margin: 0; }
+.mode .mrow .btn { margin: 0; padding: 11px 14px; min-height: 44px; font-size: 10px; letter-spacing: .12em; text-align: center; }
 
-/* --------------------------------------------------------- upgrade cards */
+@media (max-width: 620px) {
+  .mode {
+    grid-template-columns: 1fr;
+    grid-template-areas: 'name' 'desc' 'actions';
+    gap: 4px;
+  }
+  .mode .mrow { margin-top: 10px; }
+  .mode .mrow .btn { flex: 1; }
+}
+
+/* Short viewports — a phone held sideways, which is the intended way to play.
+   Vertical space is the scarce resource, so everything that is breathing room
+   on a desktop gets compressed before anything gets cut off. */
+@media (max-height: 520px) {
+  .tag { font-size: 10px; margin-top: 6px; }
+  .sheet { padding: 14px; }
+  .mode { padding: 11px 14px; }
+  .mode .md { font-size: 11px; line-height: 1.4; }
+  .mode .mn { font-size: 13.5px; }
+  .sheet-foot { margin-top: 10px; padding-top: 11px; }
+  .btn { margin-top: 8px; padding: 12px 20px; }
+  .hint { margin-top: 10px; line-height: 1.6; }
+  .panel { padding: calc(10px + var(--safe-t)) 12px calc(10px + var(--safe-b)); }
+  .card { min-height: 132px; padding: 14px 12px; gap: 6px; }
+  .card .ic { font-size: 22px; }
+}
+
+/* --------------------------------------------------------- upgrade cards --
+   Cards are the thing being chosen, so they are content, not chrome: solid
+   fills, no glass. They sit on the panel scrim with the arena behind, and
+   three blurring cards over a blurring console would be exactly the stacked
+   translucency that destroys legibility. */
 #cards { display: flex; gap: 12px; justify-content: center; margin-top: 24px; flex-wrap: wrap; }
 .card {
-  flex: 1 1 190px; max-width: 236px; min-height: 158px; padding: 18px 14px; cursor: pointer;
-  background: #17242Fd8; border: 1px solid #ffffff1a; border-top: 2px solid var(--steel);
-  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
-  transition: transform .1s, border-color .15s;
+  flex: 1 1 190px; max-width: 236px; min-height: 168px; padding: 20px 16px; cursor: pointer;
+  background: linear-gradient(180deg, rgba(28, 44, 58, .96), rgba(18, 30, 41, .96));
+  border-radius: var(--radius-card);
+  box-shadow: inset 0 0 0 1px var(--separator), 0 8px 24px rgba(0, 0, 0, .34);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 9px;
+  transition: transform var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
+  position: relative; overflow: hidden;
 }
-.card:active { transform: translateY(2px); }
-.card.act { border-top-color: var(--ice); }
-.card.pas { border-top-color: var(--amber); }
-.card .ic { font-size: 27px; line-height: 1; }
-.card .nm { font-size: 12px; letter-spacing: .16em; text-transform: uppercase; }
-.card .ds { font-size: 11px; color: var(--steel); line-height: 1.5; }
-.card .tp { font-size: 8px; letter-spacing: .22em; color: var(--steel); }
+.card::before {
+  content: ''; position: absolute; inset-inline: 0; top: 0; height: 3px; background: var(--steel);
+}
+.card.pressed { transform: scale(.975); }
+.card:focus-visible { outline: 2px solid var(--tint); outline-offset: 3px; }
+.card.act::before { background: var(--ice); }
+.card.pas::before { background: var(--tint); }
+.card .ic { font-size: 27px; line-height: 1; color: var(--label-1); }
+.card .nm { font-size: 12px; letter-spacing: .16em; text-transform: uppercase; color: var(--label-1); }
+.card .ds { font-size: 11.5px; color: var(--label-2); line-height: 1.5; }
+.card .tp { font-size: 8px; letter-spacing: .22em; color: var(--label-3); }
 
 /* -------------------------------------------------------------- summary */
 .grid { display: flex; gap: 24px; justify-content: center; margin-top: 22px; flex-wrap: wrap; }
@@ -356,21 +583,57 @@ h1 {
 #rotate .ph { width: 64px; height: 104px; border: 2px solid var(--steel); margin: 0 auto 20px; border-radius: 8px; animation: tip 1.6s ease-in-out infinite; }
 @keyframes tip { 0%, 40% { transform: rotate(0); } 60%, 100% { transform: rotate(-90deg); } }
 
-#boot { position: fixed; inset: 0; z-index: 10; display: grid; place-items: center; background: var(--ink); transition: opacity .5s; }
-#boot.gone { opacity: 0; pointer-events: none; }
-.bootinner { text-align: center; }
-.bootlogo { font-size: clamp(30px, 9vw, 60px); letter-spacing: .3em; font-weight: 800; color: var(--bone); }
-.bootbar { width: min(260px, 70vw); height: 3px; background: #ffffff16; margin: 26px auto 12px; overflow: hidden; }
-.bootbar i { display: block; height: 100%; width: 0%; background: var(--amber); transition: width .3s; }
-.boottext { font-size: 9px; letter-spacing: .3em; color: var(--steel); }
+/* ================================ BOOT =================================
+   The first thing anyone sees, and the only screen with nothing behind it to
+   lens — so it is deliberately not glass. It is a dark field with one card on
+   it, and it hands over to the menu by scaling and blurring away rather than
+   cutting, so the arena appears to come forward through it. */
+#boot {
+  position: fixed; inset: 0; z-index: 10; display: grid; place-items: center;
+  background: radial-gradient(ellipse at 50% 42%, #16222E, #080D13 72%);
+  transition: opacity .55s var(--ease-out), filter .55s var(--ease-out);
+}
+#boot.gone { opacity: 0; pointer-events: none; filter: blur(12px); }
+#boot.gone .bootinner { transform: scale(1.06); }
+.bootinner {
+  text-align: center; padding: 40px 44px;
+  transition: transform .55s var(--ease-out);
+}
+.bootlogo {
+  font-size: clamp(30px, 9vw, 60px); letter-spacing: .3em; font-weight: 800; color: var(--bone);
+  /* The wordmark breathes while the engine builds itself, so a slow boot on a
+     cheap phone still reads as working rather than hung. */
+  animation: bootbreathe 2.6s var(--ease-out) infinite;
+}
+@keyframes bootbreathe {
+  0%, 100% { opacity: .82; text-shadow: 0 0 26px rgba(255, 181, 61, .10); }
+  50%      { opacity: 1;   text-shadow: 0 0 40px rgba(255, 181, 61, .26); }
+}
+.bootbar {
+  width: min(260px, 70vw); height: 3px; background: var(--fill-1);
+  margin: 26px auto 12px; overflow: hidden; border-radius: 3px;
+}
+.bootbar i {
+  display: block; height: 100%; width: 0%;
+  background: linear-gradient(90deg, var(--tint), #FFD79A);
+  border-radius: 3px;
+  transition: width .34s var(--ease-out);
+}
+.boottext { font-size: 9px; letter-spacing: .3em; color: var(--label-3); }
 
 #toast {
-  position: fixed; left: 50%; bottom: calc(28px + var(--safe-b)); transform: translateX(-50%) translateY(20px);
-  z-index: 11; background: #17242Fee; border: 1px solid #ffffff20; padding: 12px 20px;
-  font-size: 11px; letter-spacing: .14em; opacity: 0; transition: opacity .2s, transform .2s;
+  position: fixed; left: 50%; bottom: calc(28px + var(--safe-b)); transform: translateX(-50%) translateY(16px) scale(.96);
+  z-index: 11; padding: 13px 22px; border-radius: var(--radius-control);
+  background: var(--glass-fill);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  box-shadow: inset 0 1px 0 var(--glass-specular), inset 0 0 0 .5px var(--glass-edge), 0 8px 26px rgba(0,0,0,.36);
+  font-size: 11px; letter-spacing: .14em; color: var(--label-1);
+  opacity: 0;
+  transition: opacity var(--dur-base) var(--ease-out), transform var(--dur-base) var(--ease-out);
   pointer-events: none; max-width: 90vw; text-align: center;
 }
-#toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+#toast.show { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
 
 #netbadge {
   position: fixed; left: calc(12px + var(--safe-l)); top: calc(10px + var(--safe-t)); z-index: 7;
@@ -394,7 +657,40 @@ h1 {
   .pad.sm { width: 52px; height: 52px; font-size: 16px; }
 }
 
+/* ============================ PANEL MOTION =============================
+   Glass materialises — blur and scale arrive together — rather than fading.
+   A surface that fades in is a picture of a surface; one that resolves out of
+   the blur behind it is a material. The exit runs the same path in reverse,
+   so the two are spatially consistent. */
+.panel .inner > .glass-lg,
+.panel .inner > .glass {
+  transform: scale(.965);
+  opacity: 0;
+  transition:
+    transform .34s var(--ease-out),
+    opacity .26s var(--ease-out);
+}
+.panel.show .inner > .glass-lg,
+.panel.show .inner > .glass {
+  transform: scale(1);
+  opacity: 1;
+}
+
 @media (prefers-reduced-motion: reduce) {
   #rotate .ph, #downNotice { animation: none; }
   .kf { animation: none; }
+  /* Cross-fades replace every spring and every scale. Nothing overshoots,
+     nothing travels, and the boot hand-off stops blurring the viewport. */
+  .bootlogo { animation: none; opacity: 1; }
+  #boot { transition: opacity .2s linear; }
+  #boot.gone { filter: none; }
+  #boot.gone .bootinner { transform: none; }
+  .bootinner { transition: none; }
+  .panel { transition: opacity .18s linear; }
+  .panel .inner > .glass-lg,
+  .panel .inner > .glass { transform: none; transition: opacity .18s linear; }
+  .btn, .mode, .card { transition: background .1s linear; }
+  .btn.pressed, .mode.pressed, .card.pressed { transform: none; background: var(--fill-2); }
+  #toast { transition: opacity .15s linear; transform: translateX(-50%); }
+  #toast.show { transform: translateX(-50%); }
 }
