@@ -37,7 +37,7 @@ env:
 
 jobs:
   build:
-    name: build signed apk + aab
+    name: build apk + aab
     runs-on: ubuntu-latest
     timeout-minutes: 40
 
@@ -107,15 +107,42 @@ jobs:
         working-directory: packages/android
         run: npm run sync
 
-      - name: Decode the release keystore
+      # Signing key. The real one lives in Secrets; if it is not there yet the
+      # run does NOT fail. It mints a throwaway key instead and produces an APK
+      # that installs and plays, so the pipeline is verifiable end to end before
+      # anyone has touched a secret.
+      #
+      # The difference is carried downstream in `signing`, and it matters:
+      # Android refuses to update an installed app with one signed by a
+      # different key. A test-key build attached to a normal release would make
+      # every future real release uninstallable without wiping save data. So a
+      # test-key build is published as a PRE-release, which /releases/latest
+      # ignores — the landing page's download link cannot pick it up by mistake.
+      - name: Prepare the signing key
+        id: signing
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
         run: |
-          if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then
-            echo "::error::ANDROID_KEYSTORE_BASE64 is not set. See DEPLOY.md — the release build cannot be signed without it."
-            exit 1
+          set -euo pipefail
+          if [ -n "${ANDROID_KEYSTORE_BASE64:-}" ]; then
+            echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+            echo "mode=release" >> "$GITHUB_OUTPUT"
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+            echo "suffix=" >> "$GITHUB_OUTPUT"
+            echo "using the release keystore from Secrets"
+          else
+            echo "::warning::ANDROID_KEYSTORE_BASE64 is not set — building with a throwaway key. This APK installs and plays, but it can never be updated in place by a real release build. See DEPLOY.md."
+            keytool -genkeypair -v \
+              -keystore "$RUNNER_TEMP/release.keystore" \
+              -storetype PKCS12 \
+              -keyalg RSA -keysize 2048 -validity 3650 \
+              -alias overrun \
+              -storepass overrun-testkey -keypass overrun-testkey \
+              -dname "CN=OVERRUN test key, OU=CI, O=OVERRUN, C=IR"
+            echo "mode=testkey" >> "$GITHUB_OUTPUT"
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+            echo "suffix=-testkey" >> "$GITHUB_OUTPUT"
           fi
-          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.keystore"
           ls -l "$RUNNER_TEMP/release.keystore"
 
       - name: Work out the version
@@ -134,9 +161,9 @@ jobs:
         working-directory: packages/android/android
         env:
           ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/release.keystore
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD || 'overrun-testkey' }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS || 'overrun' }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD || 'overrun-testkey' }}
           OVERRUN_VERSION_NAME: ${{ steps.version.outputs.name }}
           OVERRUN_VERSION_CODE: ${{ steps.version.outputs.code }}
         run: ./gradlew --no-daemon assembleRelease bundleRelease
@@ -184,9 +211,9 @@ jobs:
         run: |
           mkdir -p dist-android
           cp packages/android/android/app/build/outputs/apk/release/app-release.apk \
-             "dist-android/overrun-${{ steps.version.outputs.name }}.apk" 2>/dev/null || true
+             "dist-android/overrun-${{ steps.version.outputs.name }}${{ steps.signing.outputs.suffix }}.apk" 2>/dev/null || true
           cp packages/android/android/app/build/outputs/bundle/release/app-release.aab \
-             "dist-android/overrun-${{ steps.version.outputs.name }}.aab" 2>/dev/null || true
+             "dist-android/overrun-${{ steps.version.outputs.name }}${{ steps.signing.outputs.suffix }}.aab" 2>/dev/null || true
           ls -l dist-android || true
 
       - name: Upload the APK
@@ -207,8 +234,12 @@ jobs:
           if-no-files-found: warn
           retention-days: 90
 
+      # A properly signed build becomes the real release; a test-key build
+      # becomes a pre-release, so `releases/latest/download/overrun.apk` — the
+      # link the landing page uses — keeps returning nothing until there is a
+      # build that can actually be updated in place.
       - name: Attach the APK to the release
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') && steps.signing.outputs.mode == 'release'
         uses: softprops/action-gh-release@v2
         with:
           name: OVERRUN ${{ steps.version.outputs.name }}
@@ -227,3 +258,29 @@ jobs:
 
             The `.aab` is for a future Play Store listing and cannot be installed
             directly.
+
+      - name: Attach the test-key APK as a pre-release
+        if: startsWith(github.ref, 'refs/tags/') && steps.signing.outputs.mode == 'testkey'
+        uses: softprops/action-gh-release@v2
+        with:
+          name: OVERRUN ${{ steps.version.outputs.name }} (test key)
+          draft: false
+          prerelease: true
+          generate_release_notes: true
+          files: |
+            dist-android/*.apk
+            dist-android/*.aab
+          body: |
+            OVERRUN ${{ steps.version.outputs.name }} for Android — **signed with a
+            throwaway CI key**, because the release keystore is not in this
+            repository's Actions secrets yet.
+
+            It installs and it plays. What it cannot do is be updated: Android
+            refuses an update signed with a different key, so when the real
+            release build arrives you will have to uninstall this one first.
+            Anything you unlock is stored on the device and will go with it.
+
+            To turn this into a real release, add `ANDROID_KEYSTORE_BASE64`,
+            `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` and
+            `ANDROID_KEY_PASSWORD` under Settings -> Secrets and variables ->
+            Actions, then re-run this workflow. See DEPLOY.md.
