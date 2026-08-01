@@ -42,13 +42,50 @@
    sfx bus closes when the player is nearly dead. Both are arousal levers with
    measurable effects on how a fight feels, and both are free.               */
 
-const SR = 44100;
+/* The rate everything is synthesised at.
+
+   This used to be a hard 44100, which was wrong in a way that only shows up on
+   hardware that does not happen to run at 44.1 kHz. Two separate problems:
+
+   AudioBufferSourceNode resamples a mismatched buffer silently, so the sound
+   effects merely lost a little of the transient detail they were tuned for —
+   invisible, and survivable. ConvolverNode does NOT resample: handed an
+   impulse response at a rate other than the context's, Chrome throws
+   NotSupportedError. That threw during audio init, and because init was
+   awaited on the path that starts a match, the exception took the whole game
+   down with it. On a 96 kHz interface the game could not be started at all.
+
+   So the rate is decided at init from the live context, and the impulse
+   response is built on the live context directly, where a mismatch is not
+   representable. `let`, not `const`: the render helpers below read this at
+   call time and must see the value chosen for the device in front of us. */
+let SR = 44100;
+
+/* Safari has historically refused OfflineAudioContext at anything other than
+   44100. Rather than detect browsers, ask: construct a one-frame context at
+   each candidate rate and take the first that is accepted. Falling back costs
+   only resampling on playback, which is what the old code did unconditionally. */
+function pickRenderRate(preferred) {
+  const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+  if (!OAC) return 44100;
+  for (const rate of [preferred, 48000, 44100]) {
+    if (!rate) continue;
+    try {
+      new OAC(1, 1, rate);
+      return rate;
+    } catch (e) { void e; }
+  }
+  return 44100;
+}
 
 export class AudioEngine {
   constructor(settings) {
     this.settings = settings;
     this.ctx = null;
     this.ready = false;
+    // Set once if init throws, so a device with a hostile audio stack is not
+    // asked to rebuild the whole engine on every button press.
+    this.failed = false;
     this.buffers = new Map();
     this.voices = 0;
     this.maxVoices = 32;
@@ -62,12 +99,32 @@ export class AudioEngine {
   }
 
   /** Must be called from a user gesture. Returns a promise that resolves once
-   *  every buffer is baked; the game is playable before it resolves. */
+   *  every buffer is baked; the game is playable before it resolves.
+   *
+   *  Never rejects, by contract. Callers await this on the path that starts a
+   *  match, so a rejection here is a game that does not start — which is
+   *  exactly what shipped when a 44.1 kHz impulse response met a 48 kHz
+   *  context. Failure belongs to the audio engine and stops here: the worst
+   *  outcome is a silent game. Handling it in the engine rather than at one
+   *  call site means every caller is covered, including future ones. */
   async init() {
-    if (this.ready) return;
+    if (this.ready || this.failed) return;
+    try {
+      await this._init();
+    } catch (e) {
+      this.failed = true;
+      this.ready = false;
+      console.error('[audio] disabled: initialisation failed', e);
+    }
+  }
+
+  async _init() {
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return;
     const ctx = this.ctx = new AC({ latencyHint: 'interactive' });
+
+    // Before anything is synthesised: everything below bakes at SR.
+    SR = pickRenderRate(ctx.sampleRate);
 
     this.master = ctx.createGain();
     this.master.gain.value = 0.85;
@@ -99,18 +156,31 @@ export class AudioEngine {
 
     // Convolution reverb. A concrete yard: bright, medium decay, audible
     // slapback off the perimeter wall.
-    this.convolver = ctx.createConvolver();
-    this.convolver.buffer = makeImpulse(ctx, 1.9, 2.6, 0.55);
-    this.reverbSend = ctx.createGain();
-    this.reverbSend.gain.value = 0.24;
-    this.reverbReturn = ctx.createGain();
-    this.reverbReturn.gain.value = 0.5;
-
     this.sfxBus.connect(this.lowpass);
-    this.sfxBus.connect(this.reverbSend);
-    this.reverbSend.connect(this.convolver);
-    this.convolver.connect(this.reverbReturn);
-    this.reverbReturn.connect(this.lowpass);
+
+    // Reverb is a garnish, so it is wired defensively and separately: if the
+    // convolver cannot be built the dry path above is already connected and
+    // the game still has sound. This used to be inline and unguarded, and a
+    // throw here was enough to stop a match from starting.
+    try {
+      this.convolver = ctx.createConvolver();
+      this.convolver.buffer = makeImpulse(ctx, 1.9, 2.6, 0.55);
+      this.reverbSend = ctx.createGain();
+      this.reverbSend.gain.value = 0.24;
+      this.reverbReturn = ctx.createGain();
+      this.reverbReturn.gain.value = 0.5;
+
+      this.sfxBus.connect(this.reverbSend);
+      this.reverbSend.connect(this.convolver);
+      this.convolver.connect(this.reverbReturn);
+      this.reverbReturn.connect(this.lowpass);
+    } catch (e) {
+      console.warn('[audio] reverb unavailable, running dry', e);
+      this.convolver = null;
+      this.reverbSend = null;
+      this.reverbReturn = null;
+    }
+
     this.uiBus.connect(glue);
     this.musicBus.connect(glue);
     this.lowpass.connect(glue);
@@ -133,7 +203,14 @@ export class AudioEngine {
 
   async bake() {
     const jobs = [];
-    const add = (name, dur, fn) => jobs.push(renderOffline(dur, fn).then(b => this.buffers.set(name, b)));
+    // One sound that fails to render costs that sound and nothing else.
+    // play() already treats a missing buffer as silence, so the failure mode
+    // is a gap in the mix rather than a game with no audio at all.
+    const add = (name, dur, fn) => jobs.push(
+      renderOffline(dur, fn)
+        .then(b => { if (b) this.buffers.set(name, b); })
+        .catch(e => console.warn(`[audio] could not bake "${name}"`, e))
+    );
 
     // Six variants of each weapon report. The variation lives in the noise
     // seed and the transient shape, not only in pitch, which is why they read
@@ -341,7 +418,8 @@ export class AudioEngine {
     this.lowpass.frequency.cancelScheduledValues(t);
     this.lowpass.frequency.setValueAtTime(this.lowpass.frequency.value, t);
     this.lowpass.frequency.linearRampToValueAtTime(on ? 850 : 20000, t + 0.35);
-    this.reverbReturn.gain.linearRampToValueAtTime(on ? 0.9 : 0.5, t + 0.35);
+    // Only if the reverb was actually built — it is optional now.
+    if (this.reverbReturn) this.reverbReturn.gain.linearRampToValueAtTime(on ? 0.9 : 0.5, t + 0.35);
   }
 
   /* --------------------------------------------------------------- MUSIC */
@@ -754,8 +832,13 @@ function beamLoop(d, n) {
 /** Exponentially decaying noise with an early-reflection cluster: a concrete
  *  yard, not a cathedral. */
 function makeImpulse(ctx, seconds, decay, brightness) {
-  const n = Math.floor(SR * seconds);
-  const buf = ctx.createBuffer(2, n, SR);
+  // The live context's rate, deliberately, not SR. A ConvolverNode rejects an
+  // impulse response recorded at any other rate, and unlike the sample buffers
+  // there is no resampling to fall back on — it throws. Building the buffer on
+  // the context that will play it makes the mismatch unrepresentable.
+  const rate = ctx.sampleRate;
+  const n = Math.floor(rate * seconds);
+  const buf = ctx.createBuffer(2, n, rate);
   for (let ch = 0; ch < 2; ch++) {
     const d = buf.getChannelData(ch);
     let lp = 0;
@@ -765,9 +848,9 @@ function makeImpulse(ctx, seconds, decay, brightness) {
       d[i] = lp * Math.pow(1 - t, decay);
     }
     // Slapback off the perimeter wall, ~28ms out and back.
-    const tap = Math.floor(SR * 0.028) + ch * 90;
+    const tap = Math.floor(rate * 0.028) + ch * 90;
     if (tap < n) d[tap] += 0.35 * (ch ? -1 : 1);
-    const tap2 = Math.floor(SR * 0.051) + ch * 130;
+    const tap2 = Math.floor(rate * 0.051) + ch * 130;
     if (tap2 < n) d[tap2] += 0.2;
   }
   return buf;
